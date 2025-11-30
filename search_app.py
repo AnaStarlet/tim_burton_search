@@ -67,3 +67,15 @@ st.markdown("""
 - **Джонни Депп Тим Бёртон** - об их сотрудничестве
 - **Новые проекты Тим Бёртон 2024** - о будущих работах
 """)
+
+# Кнопка "Назад" - ДОБАВЛЕНО
+st.markdown("---")
+if st.button("⬅️ Назад", use_container_width=True):
+    st.markdown(
+        """
+        <script>
+            window.open('https://quixotic-shrimp-ea9.notion.site/9aabb68bd7004965819318e32d8ff06e?v=2b4a0ca7844a80d6aa8a000c6a7e5272', '_self');
+        </script>
+        """,
+        unsafe_allow_html=True
+    )
