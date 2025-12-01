@@ -1,277 +1,551 @@
 import streamlit as st
+import feedparser
 import requests
-import datetime
+from datetime import datetime, timedelta
+import time
+from bs4 import BeautifulSoup
 
 # Настройка страницы
 st.set_page_config(
     page_title="Тим Бёртон - Поиск новостей", 
     layout="wide",
-    initial_sidebar_state="expanded"  # Боковая панель открыта по умолчанию
+    initial_sidebar_state="expanded"
 )
 
-# Получаем Groq API ключ
-if 'GROQ_API_KEY' in st.secrets:
-    GROQ_API_KEY = st.secrets['GROQ_API_KEY']
-else:
-    st.error("Ключ GROQ_API_KEY не найден в секретах.")
-    GROQ_API_KEY = None
+st.title("🧛 Реальный поиск новостей: Тим Бёртон")
+st.markdown("### Поиск актуальных новостей из реальных источников в интернете")
 
-# ========== БОКОВАЯ ПАНЕЛЬ (ШТОРКА) ==========
+# ========== БОКОВАЯ ПАНЕЛЬ ==========
 with st.sidebar:
     st.title("🎬 Тим Бёртон")
     st.markdown("---")
     
     # Настройки поиска
-    st.header("⚙️ Настройки поиска")
+    st.header("⚙️ Источники новостей")
+    st.write("Выберите, где искать новости:")
     
-    # Выбор модели (если нужно)
-    model_option = st.selectbox(
-        "Модель AI:",
-        ["llama-3.1-8b-instant", "llama3-70b-8192", "mixtral-8x7b-32768"],
+    sources = {
+        "BBC News": st.checkbox("BBC News", value=True),
+        "The Guardian": st.checkbox("The Guardian", value=True),
+        "Variety": st.checkbox("Variety", value=True),
+        "Deadline": st.checkbox("Deadline Hollywood", value=True),
+        "Hollywood Reporter": st.checkbox("Hollywood Reporter", value=True),
+        "IndieWire": st.checkbox("IndieWire", value=True),
+        "Google News": st.checkbox("Google News", value=True),
+        "Entertainment Weekly": st.checkbox("Entertainment Weekly", value=False)
+    }
+    
+    st.markdown("---")
+    
+    # Фильтры
+    st.header("⏳ Фильтры")
+    time_filter = st.selectbox(
+        "Показывать новости за:",
+        ["Последние 7 дней", "Последний месяц", "Последние 3 месяца", "Последние 6 месяцев", "Все время"],
         index=0
     )
     
-    # Температура (креативность)
-    temperature = st.slider(
-        "Креативность ответов:",
-        min_value=0.0,
-        max_value=1.0,
-        value=0.5,
-        step=0.1,
-        help="Ниже = точнее, выше = креативнее"
-    )
-    
-    # Количество результатов
-    num_results = st.slider(
-        "Количество новостей:",
-        min_value=1,
-        max_value=10,
-        value=4,
-        step=1
-    )
+    # ВСЕГДА МАКСИМУМ
+    st.info("ℹ️ Всегда показывается максимальное количество найденных новостей")
     
     st.markdown("---")
     
     # Быстрый поиск
     st.header("🚀 Быстрый поиск")
-    st.write("Нажмите на запрос для поиска:")
+    st.write("Нажмите для быстрого поиска:")
     
     quick_queries = [
-        "Когда выйдет Уэднесдэй 2 сезон?",
-        "Битлджус 2 дата выхода в мире",
-        "Тим Бёртон и Моника Беллуччи последние новости",
-        "Новые проекты Тима Бёртона 2024",
-        "Выставка Бёртона в музее",
-        "Актеры Битлджус 2"
+        "Wednesday season 2",
+        "Beetlejuice 2",
+        "Tim Burton",
+        "Johnny Depp",
+        "Monica Bellucci",
+        "Burton exhibition",
+        "New projects 2024",
+        "Netflix Wednesday",
+        "Jenna Ortega",
+        "Winona Ryder"
     ]
     
-    for query in quick_queries:
-        if st.button(query, key=f"quick_{query}", use_container_width=True):
-            st.session_state.search_query = query
-            st.rerun()
+    # Показываем кнопки в 2 колонки
+    cols = st.columns(2)
+    for idx, query in enumerate(quick_queries):
+        col = cols[idx % 2]
+        with col:
+            if st.button(f"🔍 {query}", key=f"quick_{query}", use_container_width=True):
+                st.session_state.search_query = query
+                st.rerun()
     
     st.markdown("---")
     
-    # Информация о приложении
-    st.header("ℹ️ О приложении")
+    # Информация
+    st.header("ℹ️ О поиске")
     st.info("""
-    Это приложение использует Groq API для поиска 
-    актуальных новостей о Тим Бёртоне.
+    **Это реальный поиск новостей!**
     
-    **Важно:** Все ссылки и даты предоставляются 
-    AI и могут требовать проверки.
+    Приложение ищет в RSS-лентах:
+    • BBC, Guardian, Variety
+    • Deadline, Hollywood Reporter
+    • Google News
+    
+    Все новости — реальные статьи
+    со ссылками на источники.
     """)
-    
-    # Ссылки
-    st.markdown("---")
-    st.write("**Полезные ссылки:**")
-    st.markdown("""
-    - [Официальный сайт Тима Бёртона](https://timburton.com)
-    - [IMDb: Тим Бёртон](https://www.imdb.com/name/nm0000318/)
-    - [Wikipedia](https://ru.wikipedia.org/wiki/Бёртон,_Тим)
-    """)
-    
-    # Кнопка очистки
-    if st.button("🧹 Очистить историю", use_container_width=True):
-        if 'search_history' in st.session_state:
-            st.session_state.search_history = []
-        st.success("История очищена!")
 
-# ========== ОСНОВНАЯ ОБЛАСТЬ ==========
-st.title("🧛 Автоматический поиск новостей: Тим Бёртон")
-st.markdown("Поиск актуальной информации, дат релизов и интервью.")
-
-# История поиска (сохраняем в сессии)
-if 'search_history' not in st.session_state:
-    st.session_state.search_history = []
-
-def search_news(query, model=model_option, temp=temperature, num=num_results):
-    """Поиск новостей через Groq API с запросом формата даты и ссылок"""
-    if not GROQ_API_KEY:
-        return None
-        
-    url = "https://api.groq.com/openai/v1/chat/completions"
-    headers = {
-        "Authorization": f"Bearer {GROQ_API_KEY}",
-        "Content-Type": "application/json"
-    }
-    
-    # Получаем текущую дату, чтобы модель понимала контекст времени
-    current_date = datetime.datetime.now().strftime("%d.%m.%Y")
-    
-    # Обновленный промпт с учетом настроек
-    prompt = f"""
-    Сегодняшняя дата: {current_date}.
-    Ты — новостной ассистент по творчеству Тима Бёртона.
-    Пользователь ищет информацию по запросу: "{query}".
-    
-    Найди {num} ключевых факта или новости.
-    Для каждой новости ОБЯЗАТЕЛЬНО используй такой формат (используй Markdown):
-    
-    ### 🎬 [Заголовок новости]
-    📅 Дата/Период: [Укажи дату или примерное время события]
-    🔗 Источник: Укажи название источника и вставь ссылку в формате: [Название сайта]
-    📝 Суть: [Краткое описание новости]
-    
-    ---
-    
-    Если ты не знаешь точной ссылки, укажи ссылку на официальный сайт или IMDB. Не выдумывай несуществующие URL.
-    """
-    
-    data = {
-        "messages": [{"role": "user", "content": prompt}],
-        "model": model,
-        "temperature": temp
-    }
-    
+# ========== ФУНКЦИИ ПОИСКА НОВОСТЕЙ ==========
+def get_date_from_entry(entry):
+    """Извлекает дату из новостной записи"""
     try:
-        response = requests.post(url, headers=headers, json=data)
-        if response.status_code == 200:
-            result = response.json()
-            return result['choices'][0]['message']['content']
-        else:
-            return f"Ошибка API: {response.status_code}"
-    except Exception as e:
-        return f"Ошибка: {str(e)}"
+        if hasattr(entry, 'published_parsed'):
+            return datetime(*entry.published_parsed[:6])
+        elif hasattr(entry, 'updated_parsed'):
+            return datetime(*entry.updated_parsed[:6])
+        elif hasattr(entry, 'published'):
+            # Пробуем разные форматы дат
+            date_str = entry.published
+            formats = [
+                "%a, %d %b %Y %H:%M:%S %Z",
+                "%a, %d %b %Y %H:%M:%S %z",
+                "%Y-%m-%dT%H:%M:%SZ",
+                "%Y-%m-%d %H:%M:%S"
+            ]
+            for fmt in formats:
+                try:
+                    return datetime.strptime(date_str, fmt)
+                except:
+                    continue
+    except:
+        pass
+    return datetime.now()
 
-# Интерфейс поиска в основной области
+def filter_by_time(news_list, time_period):
+    """Фильтрует новости по времени"""
+    now = datetime.now()
+    
+    if time_period == "Последние 7 дней":
+        cutoff = now - timedelta(days=7)
+    elif time_period == "Последний месяц":
+        cutoff = now - timedelta(days=30)
+    elif time_period == "Последние 3 месяца":
+        cutoff = now - timedelta(days=90)
+    elif time_period == "Последние 6 месяцев":
+        cutoff = now - timedelta(days=180)
+    else:
+        return news_list
+    
+    return [news for news in news_list if news['date'] >= cutoff]
+
+def search_bbc_news(query):
+    """Поиск новостей на BBC"""
+    try:
+        url = "https://feeds.bbci.co.uk/news/entertainment_and_arts/rss.xml"
+        feed = feedparser.parse(url)
+        
+        results = []
+        for entry in feed.entries:
+            content = f"{entry.title} {entry.get('summary', '')}".lower()
+            if query.lower() in content:
+                results.append({
+                    'title': entry.title,
+                    'link': entry.link,
+                    'source': 'BBC News',
+                    'date': get_date_from_entry(entry),
+                    'summary': entry.get('summary', '')[:250] + "..." if len(entry.get('summary', '')) > 250 else entry.get('summary', ''),
+                    'full_text': entry.get('summary', '')
+                })
+        return results
+    except Exception as e:
+        return []
+
+def search_guardian_news(query):
+    """Поиск новостей в The Guardian"""
+    try:
+        url = "https://www.theguardian.com/film/rss"
+        feed = feedparser.parse(url)
+        
+        results = []
+        for entry in feed.entries:
+            content = f"{entry.title} {entry.get('summary', '')}".lower()
+            if query.lower() in content:
+                try:
+                    response = requests.get(entry.link, timeout=5)
+                    soup = BeautifulSoup(response.text, 'html.parser')
+                    
+                    # Ищем основной текст статьи в The Guardian
+                    article_body = soup.find('div', {'data-gu-name': 'body'})
+                    if not article_body:
+                        article_body = soup.find('div', class_='article-body')
+                    if not article_body:
+                        article_body = soup.find('article')
+                    
+                    full_text = article_body.get_text()[:500] + "..." if article_body else entry.get('summary', '')[:300] + "..."
+                except:
+                    full_text = entry.get('summary', '')[:300] + "..."
+                
+                results.append({
+                    'title': entry.title,
+                    'link': entry.link,
+                    'source': 'The Guardian',
+                    'date': get_date_from_entry(entry),
+                    'summary': entry.get('summary', '')[:200] + "..." if len(entry.get('summary', '')) > 200 else entry.get('summary', ''),
+                    'full_text': full_text
+                })
+        return results
+    except Exception as e:
+        return []
+
+def search_variety_news(query):
+    """Поиск новостей в Variety"""
+    try:
+        url = "https://variety.com/feed/"
+        feed = feedparser.parse(url)
+        
+        results = []
+        for entry in feed.entries:
+            content = f"{entry.title} {entry.get('summary', '')}".lower()
+            if query.lower() in content:
+                results.append({
+                    'title': entry.title,
+                    'link': entry.link,
+                    'source': 'Variety',
+                    'date': get_date_from_entry(entry),
+                    'summary': entry.get('summary', '')[:250] + "..." if len(entry.get('summary', '')) > 250 else entry.get('summary', ''),
+                    'full_text': entry.get('summary', '')
+                })
+        return results
+    except:
+        return []
+
+def search_deadline_news(query):
+    """Поиск новостей в Deadline"""
+    try:
+        url = "https://deadline.com/feed/"
+        feed = feedparser.parse(url)
+        
+        results = []
+        for entry in feed.entries:
+            content = f"{entry.title} {entry.get('summary', '')}".lower()
+            if query.lower() in content:
+                results.append({
+                    'title': entry.title,
+                    'link': entry.link,
+                    'source': 'Deadline Hollywood',
+                    'date': get_date_from_entry(entry),
+                    'summary': entry.get('summary', '')[:250] + "..." if len(entry.get('summary', '')) > 250 else entry.get('summary', ''),
+                    'full_text': entry.get('summary', '')
+                })
+        return results
+    except:
+        return []
+
+def search_hollywood_reporter(query):
+    """Поиск новостей в Hollywood Reporter"""
+    try:
+        url = "https://www.hollywoodreporter.com/feed/"
+        feed = feedparser.parse(url)
+        
+        results = []
+        for entry in feed.entries:
+            content = f"{entry.title} {entry.get('summary', '')}".lower()
+            if query.lower() in content:
+                results.append({
+                    'title': entry.title,
+                    'link': entry.link,
+                    'source': 'Hollywood Reporter',
+                    'date': get_date_from_entry(entry),
+                    'summary': entry.get('summary', '')[:250] + "..." if len(entry.get('summary', '')) > 250 else entry.get('summary', ''),
+                    'full_text': entry.get('summary', '')
+                })
+        return results
+    except:
+        return []
+
+def search_indiewire(query):
+    """Поиск новостей в IndieWire"""
+    try:
+        url = "https://www.indiewire.com/feed/"
+        feed = feedparser.parse(url)
+        
+        results = []
+        for entry in feed.entries:
+            content = f"{entry.title} {entry.get('summary', '')}".lower()
+            if query.lower() in content:
+                results.append({
+                    'title': entry.title,
+                    'link': entry.link,
+                    'source': 'IndieWire',
+                    'date': get_date_from_entry(entry),
+                    'summary': entry.get('summary', '')[:250] + "..." if len(entry.get('summary', '')) > 250 else entry.get('summary', ''),
+                    'full_text': entry.get('summary', '')
+                })
+        return results
+    except:
+        return []
+
+def search_google_news(query):
+    """Поиск через Google News RSS"""
+    try:
+        search_query = query.replace(' ', '+')
+        url = f"https://news.google.com/rss/search?q={search_query}+film+movie+Hollywood&hl=en-US&gl=US&ceid=US:en"
+        
+        feed = feedparser.parse(url)
+        
+        results = []
+        for entry in feed.entries:
+            results.append({
+                'title': entry.title,
+                'link': entry.link,
+                'source': entry.source.title if hasattr(entry, 'source') else 'Google News',
+                'date': get_date_from_entry(entry),
+                'summary': entry.title[:150] + "..." if len(entry.title) > 150 else entry.title,
+                'full_text': entry.title
+            })
+        return results
+    except:
+        return []
+
+def search_all_news(query, enabled_sources):
+    """Ищет новости по всем выбранным источникам - ВСЕГДА МАКСИМУМ"""
+    all_results = []
+    
+    # Прогресс бар
+    progress_bar = st.progress(0)
+    status_text = st.empty()
+    
+    sources_funcs = [
+        ("BBC News", search_bbc_news, enabled_sources.get("BBC News", False)),
+        ("The Guardian", search_guardian_news, enabled_sources.get("The Guardian", False)),
+        ("Variety", search_variety_news, enabled_sources.get("Variety", False)),
+        ("Deadline", search_deadline_news, enabled_sources.get("Deadline", False)),
+        ("Hollywood Reporter", search_hollywood_reporter, enabled_sources.get("Hollywood Reporter", False)),
+        ("IndieWire", search_indiewire, enabled_sources.get("IndieWire", False)),
+        ("Google News", search_google_news, enabled_sources.get("Google News", False)),
+        ("Entertainment Weekly", search_google_news, enabled_sources.get("Entertainment Weekly", False))  # заглушка
+    ]
+    
+    total_sources = sum(1 for _, _, enabled in sources_funcs if enabled)
+    current_source = 0
+    
+    for source_name, func, enabled in sources_funcs:
+        if enabled:
+            current_source += 1
+            progress = current_source / total_sources
+            progress_bar.progress(progress)
+            status_text.text(f"🔍 Ищем в {source_name}...")
+            
+            try:
+                results = func(query)
+                all_results.extend(results)
+                time.sleep(0.2)  # Небольшая пауза
+            except Exception as e:
+                st.sidebar.warning(f"Ошибка в {source_name}")
+    
+    progress_bar.empty()
+    status_text.empty()
+    
+    # Убираем дубликаты
+    seen_titles = set()
+    unique_results = []
+    for result in all_results:
+        if result['title'] not in seen_titles:
+            seen_titles.add(result['title'])
+            unique_results.append(result)
+    
+    # Сортируем по дате (свежие сначала)
+    unique_results.sort(key=lambda x: x['date'], reverse=True)
+    
+    return unique_results  # ВОЗВРАЩАЕМ ВСЕ НАЙДЕННЫЕ НОВОСТИ
+
+# ========== ОСНОВНОЙ ИНТЕРФЕЙС ==========
+# Поле поиска в основной области
 col1, col2 = st.columns([3, 1])
 
 with col1:
     st.header("🔍 Введите тему для поиска")
     
-    # Поле поиска с сохранением предыдущего запроса
     if 'search_query' not in st.session_state:
         st.session_state.search_query = ""
     
     search_query = st.text_input(
         "", 
         value=st.session_state.search_query,
-        placeholder="Например: Битлджус 2 актеры, Выставка Бёртона 2024...",
+        placeholder="Например: Tim Burton new movie, Wednesday season 2, Beetlejuice sequel...",
         key="main_search_input"
     )
 
 with col2:
-    st.markdown("###")  # Для вертикального выравнивания
-    search_button = st.button("🔎 Начать поиск", type="primary", use_container_width=True)
+    st.markdown("###")
+    search_button = st.button("🔎 НАЧАТЬ ПОИСК НОВОСТЕЙ", type="primary", use_container_width=True)
 
-# Если нажата кнопка поиска или выбран быстрый запрос
+# Если нажата кнопка поиска
 if search_button and search_query:
-    # Сохраняем в историю
-    if search_query not in st.session_state.search_history:
-        st.session_state.search_history.append(search_query)
-    
-    with st.spinner(f"Ищем информацию по запросу: '{search_query}'..."):
-        results = search_news(search_query)
+    with st.spinner(f"🔍 Ищу все новости по запросу: '{search_query}'..."):
+        # Ищем новости
+        results = search_all_news(search_query, sources)
         
         if results:
-            # Показываем запрос
-            st.subheader(f"📋 Результаты по запросу: **{search_query}**")
+            # Фильтруем по времени
+            filtered_results = filter_by_time(results, time_filter)
             
-            # Настройки, которые использовались
-            with st.expander("⚙️ Параметры этого поиска"):
-                st.write(f"- **Модель:** {model_option}")
-                st.write(f"- **Креативность:** {temperature}")
-                st.write(f"- **Количество новостей:** {num_results}")
-                st.write(f"- **Дата поиска:** {datetime.datetime.now().strftime('%d.%m.%Y %H:%M')}")
+            st.success(f"✅ НАЙДЕНО: {len(filtered_results)} РЕАЛЬНЫХ НОВОСТЕЙ!")
             
-            # Результаты
+            # Показываем источники
+            sources_used = set(r['source'] for r in filtered_results)
+            st.caption(f"**Источники:** {', '.join(sources_used)} | **Период:** {time_filter} | **Найдено всего:** {len(results)}")
+            
             st.markdown("---")
-            st.markdown(results)
             
-            # Предупреждение
-            st.warning("""
-            ⚠️ **Примечание:** 
-            1. Ссылки сгенерированы искусственным интеллектом
-            2. Если ссылка не открывается, попробуйте найти заголовок новости в Google
-            3. Даты и информация могут требовать проверки
+            # Отображаем ВСЕ новости
+            for i, news in enumerate(filtered_results):
+                # Определяем иконку для источника
+                icon = "📰"
+                if "BBC" in news['source']:
+                    icon = "🇬🇧"
+                elif "Guardian" in news['source']:
+                    icon = "🗞️"
+                elif "Variety" in news['source']:
+                    icon = "🎬"
+                elif "Deadline" in news['source']:
+                    icon = "⏰"
+                elif "Hollywood" in news['source']:
+                    icon = "⭐"
+                elif "Google" in news['source']:
+                    icon = "🔍"
+                elif "IndieWire" in news['source']:
+                    icon = "🎥"
+                
+                # Карточка новости
+                with st.expander(f"{icon} **{news['title']}**", expanded=(i < 5)):  # Первые 5 открыты
+                    col_a, col_b = st.columns([3, 1])
+                    
+                    with col_a:
+                        st.markdown(f"**Источник:** `{news['source']}`")
+                        st.markdown(f"**Дата:** `{news['date'].strftime('%d.%m.%Y %H:%M')}`")
+                        
+                        if news['summary'] and len(news['summary']) > 50:
+                            st.markdown("**Описание:**")
+                            st.write(news['summary'])
+                    
+                    with col_b:
+                        st.markdown("")
+                        st.markdown("")
+                        st.markdown(f"[📖 ОТКРЫТЬ СТАТЬЮ]({news['link']})", unsafe_allow_html=True)
+                    
+                    # Полный текст (если есть)
+                    if news.get('full_text') and len(news['full_text']) > 100:
+                        with st.expander("📄 Показать больше текста"):
+                            st.write(news['full_text'][:1500] + "..." if len(news['full_text']) > 1500 else news['full_text'])
+                
+                st.markdown("---")
+            
+            # Статистика
+            st.info(f"""
+            **📊 СТАТИСТИКА ПОИСКА:**
+            - Всего найдено новостей: **{len(results)}**
+            - После фильтра по времени: **{len(filtered_results)}**
+            - Самые свежие новости: **{filtered_results[0]['date'].strftime('%d.%m.%Y') if filtered_results else 'нет'}**
+            - Количество источников: **{len(sources_used)}**
+            - Самое старое: **{filtered_results[-1]['date'].strftime('%d.%m.%Y') if len(filtered_results) > 1 else 'нет'}**
             """)
             
-            # Кнопки действий
-            col_act1, col_act2, col_act3 = st.columns(3)
-            with col_act1:
-                if st.button("📋 Скопировать результаты", use_container_width=True):
-                    st.code(results, language="markdown")
-                    st.success("Результаты скопированы в буфер обмена!")
-            with col_act2:
-                if st.button("🔄 Новый поиск", use_container_width=True):
-                    st.session_state.search_query = ""
-                    st.rerun()
-            with col_act3:
-                if st.button("📊 Сохранить в историю", use_container_width=True):
-                    st.success("Поиск сохранен в истории!")
         else:
-            st.error("Не удалось выполнить поиск. Проверьте API ключ.")
+            st.error("😞 НЕ НАЙДЕНО НОВОСТЕЙ ПО ЗАПРОСУ.")
+            st.info("""
+            **💡 СОВЕТЫ ДЛЯ ЛУЧШЕГО ПОИСКА:**
+            1. **Используйте английские названия** - `"Tim Burton"` вместо `"Тим Бёртон"`
+            2. **Попробуйте разные формулировки** - `"Wednesday Netflix"`, `"Wednesday season 2"`, `"Wednesday Addams"`
+            3. **Убедитесь, что выбраны источники** в боковой панели
+            4. **Расширьте период поиска** - выберите "Все время"
+            5. **Попробуйте поискать позже** - новости появляются постоянно
+            
+            **Лучшие запросы:**
+            • Wednesday season 2 Netflix
+            • Beetlejuice 2 release date
+            • Tim Burton exhibition 2024
+            • Johnny Depp Burton collaboration
+            • Monica Bellucci Tim Burton
+            """)
 
-# Если есть история поиска, показываем ее
-if st.session_state.search_history:
+# Если запрос не введен
+elif not search_query or not search_button:
     st.markdown("---")
-    with st.expander("📜 История поиска (последние 10 запросов)"):
-        for i, query in enumerate(reversed(st.session_state.search_history[-10:])):
-            col_h1, col_h2 = st.columns([4, 1])
-            with col_h1:
-                st.write(f"{i+1}. {query}")
-            with col_h2:
-                if st.button("🔁", key=f"repeat_{i}"):
-                    st.session_state.search_query = query
-                    st.rerun()
-
-# Примеры в основной области
-st.markdown("---")
-with st.expander("📌 Примеры популярных запросов (нажмите, чтобы скопировать)"):
-    examples = [
-        "Когда выйдет Уэднесдэй 2 сезон?",
-        "Битлджус 2 дата выхода в мире",
-        "Тим Бёртон и Моника Беллуччи последние новости",
-        "Где проходит выставка картин Тима Бёртона?",
-        "Интервью Тима Бёртона 2024",
-        "Новый проект с Джонни Деппом",
-        "Уоднесдэй актеры второго сезона",
-        "Награды и премии 2023-2024"
+    
+    # Инструкция
+    col_info1, col_info2 = st.columns(2)
+    
+    with col_info1:
+        with st.expander("📋 КАК ПОЛЬЗОВАТЬСЯ", expanded=True):
+            st.markdown("""
+            ### 🔍 **ЭТО РЕАЛЬНЫЙ ПОИСК НОВОСТЕЙ**
+            
+            **Как работает:**
+            1. **Введите запрос** на английском языке
+            2. **Выберите источники** в боковой панели
+            3. **Нажмите "НАЧАТЬ ПОИСК"**
+            4. **Получите все найденные новости**
+            
+            **Всегда показываются ВСЕ найденные новости!**
+            
+            **Лучшие источники:**
+            • BBC News - международные новости
+            • The Guardian - качественные статьи
+            • Variety - профессиональная индустрия
+            • Deadline - последние новости Голливуда
+            """)
+    
+    with col_info2:
+        with st.expander("🎯 ЛУЧШИЕ ЗАПРОСЫ", expanded=True):
+            st.markdown("""
+            ### **Проверенные запросы:**
+            
+            **Для фильмов:**
+            • `Wednesday season 2`
+            • `Beetlejuice 2`
+            • `Tim Burton new movie`
+            • `Burton Netflix project`
+            
+            **Для актеров:**
+            • `Johnny Depp Burton`
+            • `Jenna Ortega Wednesday`
+            • `Winona Ryder Beetlejuice`
+            • `Monica Bellucci Tim`
+            
+            **Для выставок и новостей:**
+            • `Tim Burton exhibition`
+            • `Burton art show 2024`
+            • `Burton interview 2024`
+            • `New projects 2024`
+            """)
+    
+    # Последние новости (пример)
+    st.markdown("---")
+    st.subheader("🔥 ЧТО СЕЙЧАС ИЩУТ:")
+    
+    trending = [
+        "🔍 Wednesday season 2 Netflix",
+        "🔍 Beetlejuice 2 release date", 
+        "🔍 Tim Burton exhibition London",
+        "🔍 Johnny Depp new movie",
+        "🔍 Monica Bellucci Tim Burton"
     ]
     
-    for example in examples:
-        if st.button(example, key=f"example_{example}", use_container_width=True):
-            st.session_state.search_query = example
-            st.rerun()
+    for trend in trending:
+        st.markdown(f"- {trend}")
 
-# Кнопка "Назад" с вашим дизайном
+# Кнопка "На главную"
 st.markdown("---")
-if st.button("⬅️ Назад", use_container_width=True, key="back_news"):
+if st.button("🏠 НА ГЛАВНУЮ СТРАНИЦУ", use_container_width=True, type="secondary"):
     st.markdown("""
-    <div style='background-color: #2b2b2b; padding: 15px; border-radius: 10px; border: 1px solid #f0e68c;'>
-        <h4 style='color: #f0e68c; margin-top: 0;'>Перейти на главную страницу</h4>
-        <p style='margin-bottom: 10px;'>Нажмите на ссылку ниже:</p>
+    <div style='text-align: center; padding: 20px; background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); border-radius: 10px;'>
+        <h4 style='color: #f0e68c;'>ПЕРЕЙТИ НА ГЛАВНУЮ СТРАНИЦУ ПРОЕКТА</h4>
         <a href='https://quixotic-shrimp-ea9.notion.site/9aabb68bd7004965819318e32d8ff06e?v=2b4a0ca7844a80d6aa8a000c6a7e5272' 
            target='_blank' 
-           style='color: #ff6b6b; text-decoration: none; font-weight: bold; font-size: 16px;'>
-           🏠 Главная страница проекта
+           style='color: #ff6b6b; text-decoration: none; font-weight: bold; font-size: 18px; background: #0f3460; padding: 10px 20px; border-radius: 5px; display: inline-block; margin: 10px;'>
+           🚀 ОТКРЫТЬ ГЛАВНУЮ
         </a>
-        <p style='margin-top: 10px; font-size: 12px; color: #ccc;'>Ссылка откроется в новой вкладке</p>
     </div>
     """, unsafe_allow_html=True)
 
-# Информация в подвале
+# Футер
 st.markdown("---")
-st.caption("🎬 Приложение для поиска новостей о Тим Бёртоне | Использует Groq API | Обновлено: " + 
-           datetime.datetime.now().strftime("%d.%m.%Y"))
+st.caption(f"🎬 РЕАЛЬНЫЙ ПОИСК НОВОСТЕЙ | ОБНОВЛЕНО: {datetime.now().strftime('%d.%m.%Y %H:%M')} | ВСЕГДА МАКСИМАЛЬНОЕ КОЛИЧЕСТВО РЕЗУЛЬТАТОВ")
