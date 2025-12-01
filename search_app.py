@@ -1,7 +1,5 @@
 import streamlit as st
 import requests
-import os
-from datetime import datetime
 from urllib.parse import quote
 import json
 
@@ -11,10 +9,7 @@ st.set_page_config(page_title="Новости Вселенной Тима Бёр
 st.markdown("""
 <style>
     .stApp { background-color: #0f0f1f; }
-    body, p, .st-emotion-cache-16txtl3, .st-emotion-cache-1629p8f p, .st-emotion-cache-1xarl3l, h1, h2, h3, h4, h5, h6 {
-        color: #f0e68c !important;
-    }
-    .st-emotion-cache-16txtl3 { padding-top: 2rem; }
+    .main-title { color: #f0e68c; text-align: center; margin-bottom: 30px; }
     .news-card {
         background-color: #2b2b2b;
         padding: 20px;
@@ -22,170 +17,299 @@ st.markdown("""
         border-left: 5px solid #f0e68c;
         margin-bottom: 20px;
     }
+    .error-card {
+        background-color: #2b2222;
+        padding: 20px;
+        border-radius: 10px;
+        border-left: 5px solid #ff6b6b;
+        margin: 20px 0;
+    }
+    .not-related-card {
+        background-color: #22222b;
+        padding: 20px;
+        border-radius: 10px;
+        border: 2px solid #4285f4;
+        margin: 20px 0;
+        text-align: center;
+    }
+    .google-btn {
+        display: inline-block;
+        background: linear-gradient(45deg, #4285f4, #34a853);
+        color: white !important;
+        padding: 12px 24px;
+        text-decoration: none;
+        border-radius: 5px;
+        font-weight: bold;
+        font-size: 16px;
+        margin: 10px 0;
+        border: none;
+        cursor: pointer;
+    }
+    .back-btn {
+        background: linear-gradient(45deg, #f0e68c, #d4af37);
+        color: #0f0f1f !important;
+        padding: 12px 24px;
+        border-radius: 5px;
+        font-weight: bold;
+        text-decoration: none;
+        display: inline-block;
+        margin: 20px auto;
+        border: none;
+        cursor: pointer;
+        text-align: center;
+        width: 100%;
+    }
 </style>
 """, unsafe_allow_html=True)
 
-# --- Ваш API ключ Serper.dev ---
-SERPER_API_KEY = "e9eac514f1cd4452b6f6a672b3c9cd2d"
+# --- Константы ---
+MAIN_PAGE_URL = "https://quixotic-shrimp-ea9.notion.site/9aabb68bd7004965819318e32d8ff06e?v=2b4a0ca7844a80d6aa8a000c6a7e5272"
 
-# --- Функция для поиска новостей через Google (Serper.dev) ---
-@st.cache_data(ttl=1800) # Кэшируем результат на 30 минут
-def fetch_google_news(search_query):
-    """Ищет новости через Google News API от Serper.dev."""
-    if not SERPER_API_KEY:
-        return None, "API ключ не настроен."
+# --- Проверка темы запроса ---
+def is_burton_related(query):
+    """Проверяет, связан ли запрос с Тимом Бёртоном"""
+    query_lower = query.lower()
+    
+    burton_keywords = [
+        # Имена
+        'буртон', 'burton', 'тим', 'tim', 'бёртон',
+        # Фильмы
+        'уэднесдэй', 'wednesday', 'уеднесдей', 'венсдей',
+        'битлджус', 'beetlejuice', 'битлджуис',
+        'эдвард', 'edward', 'ножницы', 'scissorhands',
+        'кошмар', 'nightmare', 'рождество', 'christmas',
+        'сонная', 'sleepy', 'лощина', 'hollow',
+        'суини', 'sweeney', 'тодд', 'todd',
+        'чарли', 'charlie', 'шоколад', 'chocolate',
+        'алиса', 'alice', 'страна', 'wonderland',
+        'франкенвини', 'frankenweenie',
+        # Актеры
+        'депп', 'depp', 'джонни', 'johnny',
+        'хелена', 'helena', 'бонем', 'bonham',
+        'вайнона', 'winona', 'райдер', 'ryder',
+        'майкл', 'michael', 'китон', 'keaton',
+        'лиза', 'lisa', 'мэри', 'mary',
+        # Команда
+        'эльфман', 'elfman', 'дэнни', 'danny',
+        # Темы
+        'режиссер', 'режиссёр', 'director',
+        'готика', 'готический', 'gothic',
+        'анимация', 'animation', 'кукольный',
+        'стиль', 'style', 'выставка', 'exhibition',
+        'проект', 'project', 'фильм', 'movie',
+        'кино', 'cinema', 'сериал', 'series'
+    ]
+    
+    return any(keyword in query_lower for keyword in burton_keywords)
 
-    url = "https://google.serper.dev/news"
-    # Добавляем в запрос требование искать только за последнюю неделю для свежести
-    payload = json.dumps({"q": search_query, "gl": "ru", "hl": "ru", "tbs": "qdr:w"})
-    headers = {'X-API-KEY': SERPER_API_KEY, 'Content-Type': 'application/json'}
+# --- Статические данные (на случай ошибки API) ---
+def get_static_burton_data():
+    """Возвращает статические данные о Бёртоне"""
+    return [
+        {
+            'title': 'Тим Бёртон и Джонни Депп: 30 лет сотрудничества',
+            'snippet': 'От "Эдварда Руки-ножницы" до "Суини Тодда" - история творческого тандема длиной в три десятилетия.',
+            'source': 'КиноПоиск',
+            'date': '2024',
+            'link': 'https://www.kinopoisk.ru/name/20414/'
+        },
+        {
+            'title': 'Уэднесдэй 2 сезон: что известно',
+            'snippet': 'Netflix работает над вторым сезоном сериала "Уэднесдэй" режиссера Тима Бёртона.',
+            'source': 'Netflix News',
+            'date': '2024',
+            'link': 'https://www.netflix.com/title/81231974'
+        },
+        {
+            'title': 'Битлджус 2: детали сиквела',
+            'snippet': 'Майкл Китон возвращается в роли Битлджуса через 35 лет в сиквеле культового фильма.',
+            'source': 'IMDb',
+            'date': '2024',
+            'link': 'https://www.imdb.com/title/tt0094721/'
+        },
+        {
+            'title': 'Готический стиль Бёртона',
+            'snippet': 'Уникальный визуальный язык режиссера: от черно-белой эстетики до кукольной анимации.',
+            'source': 'Арт-обзор',
+            'date': '2024',
+            'link': 'https://ru.wikipedia.org/wiki/Бёртон,_Тим'
+        }
+    ]
 
+# --- Поиск новостей (с резервным вариантом) ---
+def search_burton_info(query):
+    """Поиск информации о Бёртоне с резервными данными"""
+    # Сначала проверяем тему
+    if not is_burton_related(query):
+        return None, "not_related"
+    
+    # Пробуем получить данные из API
     try:
-        response = requests.post(url, headers=headers, data=payload)
+        # Формируем URL для RSS Google News (бесплатный метод)
+        search_url = f"https://news.google.com/rss/search?q={quote('Тим Бёртон ' + query)}&hl=ru&gl=RU&ceid=RU:ru"
+        
+        headers = {'User-Agent': 'Mozilla/5.0'}
+        response = requests.get(search_url, timeout=5)
+        
         if response.status_code == 200:
-            results = response.json().get("news", [])
-            return results, None
-        else:
-            return None, f"Ошибка API. Статус: {response.status_code}"
-    except Exception as e:
-        return None, f"Ошибка сети: {e}"
+            import xml.etree.ElementTree as ET
+            root = ET.fromstring(response.content)
+            
+            articles = []
+            for item in root.findall('.//item')[:5]:
+                title = item.find('title').text if item.find('title') is not None else ''
+                link = item.find('link').text if item.find('link') is not None else '#'
+                
+                # Фильтруем только статьи про Бёртона
+                if 'буртон' in title.lower() or 'burton' in title.lower():
+                    import re
+                    description = ''
+                    if item.find('description') is not None:
+                        desc_text = item.find('description').text or ''
+                        description = re.sub('<[^<]+?>', '', desc_text)
+                    
+                    pub_date = item.find('pubDate').text if item.find('pubDate') is not None else '2024'
+                    
+                    articles.append({
+                        'title': title,
+                        'link': link,
+                        'snippet': description[:200] + '...' if len(description) > 200 else description,
+                        'source': 'Google News',
+                        'date': pub_date[:16]
+                    })
+            
+            if articles:
+                return articles, "success"
+            else:
+                # Если нет результатов в RSS, возвращаем статические данные
+                return get_static_burton_data(), "static_data"
+                
+    except Exception:
+        # При любой ошибке возвращаем статические данные
+        return get_static_burton_data(), "static_data"
+    
+    return get_static_burton_data(), "static_data"
 
 # === ИНТЕРФЕЙС ПРИЛОЖЕНИЯ ===
-st.title("🦇 Дайджест новостей вселенной Тима Бёртона")
-st.write("Автоматический поиск самых актуальных новостей о Тим Бёртоне, его фильмах, проектах и команде.")
-st.divider()
+st.markdown('<h1 class="main-title">🦇 Поиск информации о Тим Бёртоне</h1>', unsafe_allow_html=True)
+st.write("Найдите информацию о фильмах, актерах и проектах Тима Бёртона")
 
-# --- Раздел "Последние актуальные новости" ---
-st.header("🔥 Последние релевантные новости")
+# --- Быстрые запросы ---
+st.header("🎬 Быстрые запросы")
 
-# Ключевые слова для поиска новостей о Тиме Бёртоне
-relevant_keywords = (
-    # Основное
-    '"Tim Burton" OR "Тим Бёртон" OR "Тима Бёртона" OR '
-    # Фильмы и проекты
-    '"Wednesday" OR "Уэднесдэй" OR "Уэнсдэй" OR '
-    '"Beetlejuice" OR "Битлджус" OR "Битлджуис" OR '
-    '"Edward Scissorhands" OR "Эдвард Руки-ножницы" OR '
-    '"The Nightmare Before Christmas" OR "Кошмар перед Рождеством" OR '
-    '"Sleepy Hollow" OR "Сонная Лощина" OR '
-    # Актеры и команда
-    '"Johnny Depp" OR "Джонни Депп" OR '
-    '"Helena Bonham Carter" OR "Хелена Бонем Картер" OR '
-    '"Danny Elfman" OR "Дэнни Эльфман" OR '
-    '"Winona Ryder" OR "Вайнона Райдер" OR '
-    '"Michael Keaton" OR "Майкл Китон" OR '
-    # Компании
-    '"Burton Productions" OR "Tim Burton Productions" OR '
-    # События
-    '"Burton exhibition" OR "выставка Бёртона" OR '
-    '"Burton style" OR "стиль Бёртона" OR "готический стиль"'
+col1, col2, col3, col4 = st.columns(4)
+with col1:
+    if st.button("Уэднесдэй", use_container_width=True):
+        st.session_state.search_query = "Уэднесдэй"
+with col2:
+    if st.button("Битлджус 2", use_container_width=True):
+        st.session_state.search_query = "Битлджус"
+with col3:
+    if st.button("Джонни Депп", use_container_width=True):
+        st.session_state.search_query = "Джонни Депп"
+with col4:
+    if st.button("Готический стиль", use_container_width=True):
+        st.session_state.search_query = "готический стиль"
+
+# --- Поисковая строка ---
+st.header("🔍 Поиск информации")
+
+if 'search_query' not in st.session_state:
+    st.session_state.search_query = ""
+
+search_query = st.text_input(
+    "Введите запрос о Тим Бёртоне:",
+    value=st.session_state.search_query,
+    placeholder="Например: сотрудничество с Джонни Деппом, новые проекты...",
+    label_visibility="collapsed"
 )
 
-with st.spinner("Загружаю самые релевантные новости о Тим Бёртоне за последнюю неделю..."):
-    latest_articles, error = fetch_google_news(relevant_keywords)
-
-    if error:
-        st.error(error)
-    elif latest_articles:
-        st.success(f"Найдено свежих новостей: {len(latest_articles)}")
-        for article in latest_articles[:10]: # Показываем до 10 новостей
-            with st.container():
-                st.markdown(f"""
-                <div class="news-card">
-                    <h3 style="color: #f0e68c;">{article['title']}</h3>
-                    <p style="color: #ccc; font-size: 0.9em;">
-                    📰 <strong>Источник:</strong> {article['source']} | 
-                    📅 <strong>Опубликовано:</strong> {article.get('date', 'Дата неизвестна')}
-                    </p>
-                    <p style="color: #e0e0e0;">{article.get('snippet', 'Описание отсутствует.')}</p>
-                    <a href="{article['link']}" target="_blank" style="color: #ff6b6b; text-decoration: none;">
-                    🔗 Читать полную статью
-                    </a>
-                </div>
-                """, unsafe_allow_html=True)
+# --- Обработка поиска ---
+if st.button("🔎 Найти", type="primary", use_container_width=True):
+    if not search_query:
+        st.warning("Пожалуйста, введите запрос")
+    else:
+        st.session_state.search_query = search_query
+        
+        # Проверяем тему
+        if not is_burton_related(search_query):
+            # Запрос не по теме
+            st.markdown(f"""
+            <div class="not-related-card">
+                <h3 style="color: #4285f4;">⚠️ Этот запрос не связан с Тимом Бёртоном</h3>
+                <p>Вы искали: <strong>"{search_query}"</strong></p>
+                <p>Эта система ищет только информацию о Тим Бёртоне и его творчестве.</p>
                 
-                if latest_articles.index(article) < 9:  # Добавляем разделитель между новостями
-                    st.markdown("<hr style='border: 1px solid #444;'>", unsafe_allow_html=True)
-    else:
-        st.info("Не удалось найти свежих новостей о Тим Бёртоне за последнюю неделю.")
+                <a href="https://www.google.com/search?q={quote(search_query)}" 
+                   target="_blank" 
+                   class="google-btn">
+                🔍 Поиск в Google
+                </a>
+            </div>
+            """, unsafe_allow_html=True)
+        else:
+            # Запрос по теме - ищем информацию
+            with st.spinner("🦇 Ищу информацию..."):
+                articles, status = search_burton_info(search_query)
+                
+                if status == "not_related":
+                    st.error("Запрос не связан с Тимом Бёртоном")
+                elif articles:
+                    if status == "static_data":
+                        st.info("ℹ️ Используются данные из базы знаний")
+                    
+                    st.success(f"🎭 Найдено материалов: {len(articles)}")
+                    
+                    for article in articles:
+                        with st.container():
+                            st.markdown(f"""
+                            <div class="news-card">
+                                <h4 style="color: #f0e68c;">{article['title']}</h4>
+                                <p style="color: #ccc; font-size: 0.9em;">
+                                📰 <strong>{article['source']}</strong> | 📅 {article['date']}
+                                </p>
+                                <p style="color: #e0e0e0;">{article['snippet']}</p>
+                                <a href="{article['link']}" target="_blank" 
+                                   style="color: #ff6b6b; text-decoration: none; font-weight: bold;">
+                                🔗 Читать подробнее
+                                </a>
+                            </div>
+                            """, unsafe_allow_html=True)
 
-# --- Раздел "Индивидуальный поиск" ---
-st.header("🔍 Индивидуальный поиск")
-st.write("Ищите информацию о конкретных фильмах, актерах или событиях связанных с Тим Бёртоном.")
-
-# Примеры для пользователя
-st.info('Примеры запросов: Уэднесдэй 2 сезон, Битлджус 2, Джонни Депп, готический стиль')
-
-search_term = st.text_input("Введите ваш точный запрос для поиска:", "")
-
-if st.button("Найти"):
-    if not search_term:
-        st.warning("Пожалуйста, введите запрос для поиска.")
-    else:
-        with st.spinner(f"Ищу в Google News по запросу '{search_term}'..."):
-            articles, error = fetch_google_news(search_term)
-
-            if error:
-                st.error(error)
-            elif not articles:
-                st.info(f"Новостей по запросу '{search_term}' не найдено.")
-            else:
-                st.success(f"Найдено результатов: {len(articles)}")
-                for article in articles[:15]:
-                    with st.container():
-                        st.markdown(f"""
-                        <div class="news-card">
-                            <h3 style="color: #f0e68c;">{article['title']}</h3>
-                            <p style="color: #ccc; font-size: 0.9em;">
-                            📰 <strong>Источник:</strong> {article['source']} | 
-                            📅 <strong>Опубликовано:</strong> {article.get('date', 'Дата неизвестна')}
-                            </p>
-                            <p style="color: #e0e0e0;">{article.get('snippet', 'Описание отсутствует.')}</p>
-                            <a href="{article['link']}" target="_blank" style="color: #ff6b6b; text-decoration: none;">
-                            🔗 Читать полную статью
-                            </a>
-                        </div>
-                        """, unsafe_allow_html=True)
-                        
-                        if articles.index(article) < 14:  # Добавляем разделитель
-                            st.markdown("<hr style='border: 1px solid #444;'>", unsafe_allow_html=True)
-
-# --- Сайдбар с дополнительной информацией ---
-with st.sidebar:
-    st.markdown("### 🦇 О системе поиска")
+# --- Информация о системе ---
+with st.expander("ℹ️ О системе", expanded=False):
     st.markdown("""
-    **Поиск по темам:**
-    - Фильмы и проекты Бёртона
+    **Эта система ищет информацию о:**
+    
+    ✅ **Тим Бёртон:**
+    - Все фильмы и проекты
     - Актеры и команда
-    - Выставки и события
-    - Интервью и новости
     - Стиль и творчество
+    - Выставки и события
     
-    **Использует:** Google News API
-    **Период:** Последняя неделя
-    **Язык:** Русский
+    ✅ **Примеры запросов:**
+    - Уэднесдэй 2 сезон
+    - Битлджус 2 фильм
+    - Джонни Депп сотрудничество
+    - Дэнни Эльфман музыка
+    - Готический стиль Бёртона
+    
+    
     """)
-    
-    st.markdown("---")
-    
-    # Кнопка "Назад" с прямой ссылкой
-    if st.button("⬅️ На главную", use_container_width=True):
-        st.markdown(f"""
-        <div style="text-align: center; margin: 20px 0;">
-            <a href="https://quixotic-shrimp-ea9.notion.site/9aabb68bd7004965819318e32d8ff06e?v=2b4a0ca7844a80d6aa8a000c6a7e5272" 
-               target="_blank" 
-               style="display: inline-block; padding: 10px 20px; background: #f0e68c; color: #0f0f1f; 
-                      border-radius: 5px; text-decoration: none; font-weight: bold;">
-            🏠 Открыть главную страницу
-            </a>
-        </div>
-        """, unsafe_allow_html=True)
+
+# --- ОДНА кнопка "Назад" внизу ---
+st.markdown("---")
+st.markdown(f"""
+<div style="text-align: center; padding: 20px;">
+    <a href="{MAIN_PAGE_URL}" target="_blank" class="back-btn">
+    ⬅️ Вернуться на главную страницу
+    </a>
+</div>
+""", unsafe_allow_html=True)
 
 # --- Футер ---
-st.markdown("---")
 st.markdown("""
-<div style='text-align: center; color: #888; padding: 20px;'>
-    <p>🦇 Система поиска новостей вселенной Тима Бёртона</p>
-    <p><small>Использует Google News API для поиска актуальной информации</small></p>
+<div style='text-align: center; color: #888; padding: 10px; font-size: 0.9em;'>
+    <p>🦇 Система поиска информации о Тим Бёртоне</p>
 </div>
 """, unsafe_allow_html=True)
