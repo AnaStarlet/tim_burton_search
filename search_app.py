@@ -1,270 +1,248 @@
 import streamlit as st
 import requests
-import urllib.parse
+import os
+from datetime import datetime
+from urllib.parse import quote
+import json
 
-# Настройка страницы
-st.set_page_config(page_title="Тим Бёртон - Поиск новостей", layout="wide")
+# --- Настройки страницы ---
+st.set_page_config(page_title="Новости Вселенной Тима Бёртона", layout="wide")
 
-# Получаем Groq API ключ
-API_KEY = "e9eac514f1cd4452b6f6a672b3c9cd2d"  # Ваш API ключ
-GROQ_API_KEY = API_KEY if API_KEY else None
-
-if not GROQ_API_KEY:
-    st.error("Ключ API не найден.")
-
-st.title("🦇 Автоматический поиск новостей о творческой вселенной Тима Бёртона")
-
-def search_news(query):
-    """Поиск информации через Groq API о творческой вселенной Тима Бёртона"""
-    if not GROQ_API_KEY:
-        return None, False
-        
-    url = "https://api.groq.com/openai/v1/chat/completions"
-    headers = {
-        "Authorization": f"Bearer {GROQ_API_KEY}",
-        "Content-Type": "application/json"
+st.markdown("""
+<style>
+    .stApp { background-color: #0f0f1f; }
+    body, p, .st-emotion-cache-16txtl3, .st-emotion-cache-1629p8f p, .st-emotion-cache-1xarl3l, h1, h2, h3, h4, h5, h6 {
+        color: #f0e68c !important;
     }
-    
-    # Широкий промпт для всей творческой вселенной Бёртона
-    prompt = f"""Ты - эксперт по творческой вселенной режиссера Тима Бёртона. 
-Отвечай на вопросы о ВСЁМ, что связано с Тимом Бёртоном и его творчеством:
-
-РАЗРЕШЕННЫЕ ТЕМЫ:
-1. Все фильмы и проекты Тима Бёртона
-2. Все актёры, которые снимались у Бёртона (Джонни Депп, Хелена Бонем Картер, Майкл Китон, Вайнона Райдер, Лиза Мэри и др.)
-3. Композиторы (Дэнни Эльфман и другие)
-4. Сценаристы, продюсеры, операторы, работавшие с Бёртоном
-5. Анимационные и художественные работы Бёртона
-6. Биография, награды, интервью Бёртона
-7. Критика и анализ его творчества
-8. Фанатская культура и сообщество
-9. Влияние Бёртона на поп-культуру
-10. Стиль, визуальные особенности его работ
-
-ИНСТРУКЦИИ:
-1. Если вопрос СВЯЗАН с Тимоти Бёртоном или его творческой вселенной - дай развернутый ответ.
-2. Если вопрос НЕ связан с Бёртоном и его миром (например, погода, политика, другие режиссеры, общие темы), отвечай: "Этот вопрос не связан с творческой вселенной Тима Бёртона."
-3. Отвечай на русском языке.
-4. Предоставляй актуальную информацию (если доступна).
-5. Формат: краткий, информативный ответ.
-
-Вопрос пользователя: {query}
-
-Ответ:"""
-    
-    data = {
-        "messages": [{"role": "user", "content": prompt}],
-        "model": "llama-3.1-8b-instant",
-        "temperature": 0.4,
-        "max_tokens": 800
+    .st-emotion-cache-16txtl3 { padding-top: 2rem; }
+    .news-card {
+        background-color: #2b2b2b;
+        padding: 20px;
+        border-radius: 10px;
+        border-left: 5px solid #f0e68c;
+        margin-bottom: 20px;
     }
-    
+</style>
+""", unsafe_allow_html=True)
+
+# --- Ваш API ключ Serper.dev ---
+SERPER_API_KEY = "e9eac514f1cd4452b6f6a672b3c9cd2d"  # Ваш API ключ
+
+# --- Функция для поиска новостей через Google (Serper.dev) ---
+@st.cache_data(ttl=1800) # Кэшируем результат на 30 минут
+def fetch_google_news(search_query):
+    """Ищет новости через Google News API от Serper.dev."""
+    if not SERPER_API_KEY:
+        return None, "API ключ не настроен."
+
+    url = "https://google.serper.dev/news"
+    # Добавляем в запрос требование искать только за последнюю неделю для свежести
+    payload = json.dumps({"q": search_query, "gl": "ru", "hl": "ru", "tbs": "qdr:w"})
+    headers = {'X-API-KEY': SERPER_API_KEY, 'Content-Type': 'application/json'}
+
     try:
-        response = requests.post(url, headers=headers, json=data)
+        response = requests.post(url, headers=headers, data=payload)
         if response.status_code == 200:
-            result = response.json()
-            answer = result['choices'][0]['message']['content']
-            
-            # Проверяем, является ли вопрос о вселенной Бёртона
-            is_burton_universe = True
-            rejection_phrases = [
-                "не связан с творческой вселенной",
-                "не связан с тимом бёртоном",
-                "этот вопрос не связан",
-                "не могу ответить на этот вопрос"
-            ]
-            
-            # Также проверяем, не является ли ответ слишком общим/универсальным
-            universal_answers = [
-                "я не могу ответить",
-                "я не знаю",
-                "не имею информации",
-                "модель не может"
-            ]
-            
-            answer_lower = answer.lower()
-            for phrase in rejection_phrases + universal_answers:
-                if phrase in answer_lower and len(answer) < 150:  # Если короткий отказ
-                    is_burton_universe = False
-                    break
-            
-            return answer, is_burton_universe
+            results = response.json().get("news", [])
+            return results, None
         else:
-            return f"Ошибка API: {response.status_code}", False
+            return None, f"Ошибка API. Статус: {response.status_code}"
     except Exception as e:
-        return f"Ошибка: {str(e)}", False
+        return None, f"Ошибка сети: {e}"
 
-def create_google_search_link(query):
-    """Создает ссылку для поиска в Google"""
-    encoded_query = urllib.parse.quote(query)
-    return f"https://www.google.com/search?q={encoded_query}"
+# === ИНТЕРФЕЙС ПРИЛОЖЕНИЯ ===
+st.title("🦇 Дайджест новостей вселенной Тима Бёртона")
+st.write("Автоматический поиск самых актуальных новостей о Тим Бёртоне, его фильмах, проектах и команде.")
+st.divider()
 
-# Интерфейс поиска
-st.header("🔍 Поиск по вселенной Тима Бёртона")
-st.markdown("### Ищите информацию о фильмах, актёрах, проектах и всем, что связано с Бёртоном")
+# --- Раздел "Последние актуальные новости" ---
+st.header("🔥 Последние новости о Бёртоне")
 
-col1, col2 = st.columns([3, 1])
-with col1:
-    search_query = st.text_input(
-        "Введите ваш запрос:",
-        placeholder="Например: Уэднесдэй 2 сезон, Джонни Депп, Дэнни Эльфман...",
-        key="search_input"
-    )
+# Ключевые слова для поиска новостей о Тиме Бёртоне
+burton_keywords = (
+    # Основные запросы
+    '"Tim Burton" OR "Тим Бёртон" OR "Тима Бёртона" OR '
+    # Проекты и фильмы
+    '"Wednesday" OR "Уэднесдэй" OR "Уэнсдэй" OR '
+    '"Beetlejuice 2" OR "Битлджус 2" OR "Битрлджус" OR '
+    '"The Nightmare Before Christmas" OR "Кошмар перед Рождеством" OR '
+    '"Edward Scissorhands" OR "Эдвард Руки-ножницы" OR '
+    # Актеры и команда
+    '"Johnny Depp" OR "Джонни Депп" OR '
+    '"Helena Bonham Carter" OR "Хелена Бонем Картер" OR '
+    '"Danny Elfman" OR "Дэнни Эльфман" OR '
+    '"Winona Ryder" OR "Вайнона Райдер" OR '
+    # Компании и студии
+    '"Burton Productions" OR "Tim Burton Productions" OR '
+    # События и награды
+    '"Burton exhibition" OR "выставка Бёртона" OR '
+    '"Burton style" OR "стиль Бёртона"'
+)
 
-# Быстрые кнопки популярных запросов
-st.markdown("### 🚀 Популярные запросы:")
-quick_cols = st.columns(5)
-with quick_cols[0]:
-    if st.button("🎬 Уэднесдэй 2", use_container_width=True):
-        st.session_state.search_query = "Уэднесдэй 2 сезон новости"
-with quick_cols[1]:
-    if st.button("👻 Битлджус 2", use_container_width=True):
-        st.session_state.search_query = "Битлджус 2 новый фильм Тим Бёртон"
-with quick_cols[2]:
-    if st.button("🎭 Джонни Депп", use_container_width=True):
-        st.session_state.search_query = "Джонни Депп и Тим Бёртон сотрудничество"
-with quick_cols[3]:
-    if st.button("🎵 Дэнни Эльфман", use_container_width=True):
-        st.session_state.search_query = "Дэнни Эльфман музыка для фильмов Бёртона"
-with quick_cols[4]:
-    if st.button("📅 Новые проекты", use_container_width=True):
-        st.session_state.search_query = "Новые проекты Тим Бёртон 2024"
+with st.spinner("🦇 Ищу последние новости о Тим Бёртоне..."):
+    latest_articles, error = fetch_google_news(burton_keywords)
 
-# Используем состояние для автоматического заполнения
-if 'search_query' in st.session_state and st.session_state.search_query:
-    search_query = st.session_state.search_query
-
-if search_query:
-    with st.spinner("🔮 Погружаюсь в мир Бёртона..."):
-        results, is_burton_universe = search_news(search_query)
+    if error:
+        st.error(f"Ошибка при поиске: {error}")
+    elif latest_articles:
+        st.success(f"🎭 Найдено свежих новостей: {len(latest_articles)}")
         
-        if results:
-            if is_burton_universe:
-                st.subheader("🎭 Результаты поиска:")
-                st.markdown(f"**Запрос:** `{search_query}`")
-                st.markdown("---")
-                
-                # Красивое оформление ответа
+        for idx, article in enumerate(latest_articles[:15]): # Показываем до 15 новостей
+            with st.container():
                 st.markdown(f"""
-                <div style='background-color: #2b2b2b; padding: 20px; border-radius: 10px; border-left: 5px solid #f0e68c;'>
-                {results.replace('\n', '<br>')}
+                <div class="news-card">
+                    <h3 style="color: #f0e68c;">{article['title']}</h3>
+                    <p style="color: #ccc; font-size: 0.9em;">
+                    📰 <strong>Источник:</strong> {article['source']} | 
+                    📅 <strong>Дата:</strong> {article.get('date', 'Неизвестно')}
+                    </p>
+                    <p style="color: #e0e0e0;">{article.get('snippet', 'Описание отсутствует.')}</p>
+                    <a href="{article['link']}" target="_blank" style="color: #ff6b6b; text-decoration: none;">
+                    🔗 Читать полную статью
+                    </a>
                 </div>
                 """, unsafe_allow_html=True)
                 
-                # Дополнительные ссылки
-                st.markdown("---")
-                col_info, col_google = st.columns(2)
-                with col_info:
-                    st.markdown("""
-                    **📚 Дополнительно:**
-                    - [Википедия: Тим Бёртон](https://ru.wikipedia.org/wiki/Бёртон,_Тим)
-                    - [IMDb фильмография](https://www.imdb.com/name/nm0000318/)
-                    """)
-                with col_google:
-                    google_link = create_google_search_link(f"Тим Бёртон {search_query}")
-                    st.markdown(f"""
-                    **🔍 Больше информации:**
-                    [Поиск в Google]({google_link})
-                    """)
-                    
-            else:
-                # Если вопрос не о вселенной Бёртона
-                st.warning("⚠️ Этот запрос не связан с творческой вселенной Тима Бёртона")
-                st.markdown("---")
+                if idx < len(latest_articles[:15]) - 1:
+                    st.markdown("<hr style='border: 1px solid #444;'>", unsafe_allow_html=True)
+    else:
+        st.info("📭 Не удалось найти свежих новостей о Тим Бёртоне за последнюю неделю.")
+
+# --- Раздел "Индивидуальный поиск" ---
+st.header("🔍 Персональный поиск по вселенной Бёртона")
+st.write("Ищите информацию о конкретных фильмах, актерах или событиях связанных с Тим Бёртоном.")
+
+# Быстрые кнопки поиска
+st.markdown("### 🚀 Популярные запросы:")
+col1, col2, col3, col4 = st.columns(4)
+
+with col1:
+    if st.button("🎬 Уэднесдэй 2", use_container_width=True):
+        st.session_state.custom_search = "Уэднесдэй 2 сезон новости Тим Бёртон"
+with col2:
+    if st.button("👻 Битлджус 2", use_container_width=True):
+        st.session_state.custom_search = "Beetlejuice 2 новости 2024"
+with col3:
+    if st.button("🎭 Джонни Депп", use_container_width=True):
+        st.session_state.custom_search = "Джонни Депп Тим Бёртон сотрудничество"
+with col4:
+    if st.button("🎵 Дэнни Эльфман", use_container_width=True):
+        st.session_state.custom_search = "Дэнни Эльфман музыка Бёртона"
+
+# Поле для ввода запроса
+if 'custom_search' in st.session_state:
+    default_search = st.session_state.custom_search
+else:
+    default_search = ""
+
+search_term = st.text_input(
+    "Введите ваш запрос о Тим Бёртоне:", 
+    value=default_search,
+    placeholder="Например: Тим Бёртон выставка, новые проекты 2024, готический стиль..."
+)
+
+# Примеры запросов
+with st.expander("📋 Примеры запросов"):
+    st.markdown("""
+    - **Фильмы:** "Кошмар перед Рождеством новости", "Эдвард Руки-ножницы ремастер"
+    - **Актеры:** "Майкл Китон Битлджус", "Ева Грин Бёртон", "Кристофер Ли"
+    - **Стиль:** "Готический стиль Бёртона", "визуальные эффекты Бёртона"
+    - **События:** "Выставка Бёртона в музее", "интервью Тим Бёртон 2024"
+    - **Проекты:** "Новые проекты Бёртона", "анимационные работы Бёртона"
+    """)
+
+if st.button("🔎 Найти новости", type="primary", use_container_width=True):
+    if not search_term:
+        st.warning("⚠️ Пожалуйста, введите запрос для поиска.")
+    else:
+        with st.spinner(f"🦇 Ищу новости по запросу '{search_term}'..."):
+            articles, error = fetch_google_news(search_term)
+
+            if error:
+                st.error(f"Ошибка: {error}")
+            elif not articles:
+                st.info(f"📭 Новостей по запросу '{search_term}' не найдено.")
                 
-                # Предлагаем поискать в Google с вариантами
-                st.subheader("🔎 Попробуйте один из вариантов:")
-                
-                google_link = create_google_search_link(search_query)
-                burton_google_link = create_google_search_link(f"Тим Бёртон {search_query}")
-                
-                col1, col2 = st.columns(2)
-                with col1:
-                    st.markdown(f"""
-                    <div style='background-color: #f0f8ff; padding: 15px; border-radius: 10px; border: 2px solid #4da6ff; text-align: center;'>
-                        <h4 style='color: #0066cc;'>Общий поиск</h4>
-                        <a href='{google_link}' 
-                           target='_blank' 
-                           style='color: #0066cc; text-decoration: none; font-weight: bold;'>
-                           🔍 "{search_query}"
-                        </a>
-                    </div>
-                    """, unsafe_allow_html=True)
-                
-                with col2:
-                    st.markdown(f"""
-                    <div style='background-color: #fff0f0; padding: 15px; border-radius: 10px; border: 2px solid #ff6b6b; text-align: center;'>
-                        <h4 style='color: #cc0000;'>Поиск с Бёртоном</h4>
-                        <a href='{burton_google_link}' 
-                           target='_blank' 
-                           style='color: #cc0000; text-decoration: none; font-weight: bold;'>
-                           🦇 "Тим Бёртон {search_query}"
-                        </a>
-                    </div>
-                    """, unsafe_allow_html=True)
-                
-                # Быстрые запросы по Бёртону
-                st.markdown("---")
-                st.markdown("### 🎬 Или попробуйте эти запросы о Бёртоне:")
-                
-                quick_buttons = st.columns(4)
-                burtons_queries = [
-                    "Фильмы Тима Бёртона",
-                    "Актёры Бёртона",
-                    "Стиль Бёртона",
-                    "Новости Бёртона"
+                # Предлагаем альтернативные варианты
+                st.markdown("### 💡 Попробуйте другие запросы:")
+                alt_cols = st.columns(3)
+                alt_queries = [
+                    "Тим Бёртон",
+                    "Tim Burton новости",
+                    "Бёртон проекты"
                 ]
                 
-                for idx, query in enumerate(burtons_queries):
-                    with quick_buttons[idx]:
+                for i, query in enumerate(alt_queries):
+                    with alt_cols[i]:
                         if st.button(query, use_container_width=True):
-                            st.session_state.search_query = query
+                            st.session_state.custom_search = query
                             st.rerun()
-        else:
-            st.error("❌ Не удалось выполнить поиск. Попробуйте позже.")
+            else:
+                st.success(f"🎭 Найдено результатов: {len(articles)}")
+                
+                for idx, article in enumerate(articles[:20]): # Показываем до 20 результатов
+                    with st.container():
+                        st.markdown(f"""
+                        <div class="news-card">
+                            <h3 style="color: #f0e68c;">{article['title']}</h3>
+                            <p style="color: #ccc; font-size: 0.9em;">
+                            📰 <strong>Источник:</strong> {article['source']} | 
+                            📅 <strong>Дата:</strong> {article.get('date', 'Неизвестно')}
+                            </p>
+                            <p style="color: #e0e0e0;">{article.get('snippet', 'Описание отсутствует.')}</p>
+                            <a href="{article['link']}" target="_blank" style="color: #ff6b6b; text-decoration: none;">
+                            🔗 Читать полную статью
+                            </a>
+                        </div>
+                        """, unsafe_allow_html=True)
+                        
+                        if idx < len(articles[:20]) - 1:
+                            st.markdown("<hr style='border: 1px solid #444;'>", unsafe_allow_html=True)
 
-# Боковая панель с информацией
-with st.sidebar:
-    st.markdown("### 🦇 О системе поиска")
+# --- Раздел "Статистика" ---
+st.sidebar.header("📊 Статистика поиска")
+st.sidebar.markdown("""
+**Поиск по ключевым темам:**
+- 🎬 Фильмы и проекты
+- 🎭 Актеры и команда  
+- 🏛️ Выставки и события
+- 🎨 Стиль и творчество
+- 📅 Новости 2023-2024
+""")
+
+if latest_articles:
+    st.sidebar.metric("📈 Найдено новостей", len(latest_articles))
+    sources = list(set([article['source'] for article in latest_articles[:10]]))
+    st.sidebar.markdown(f"**📰 Источники:** {', '.join(sources[:5])}")
+
+# --- Кнопка "Назад" ---
+st.sidebar.markdown("---")
+st.sidebar.markdown("### 🔙 Навигация")
+if st.sidebar.button("⬅️ Вернуться на главную", use_container_width=True):
     st.markdown("""
-    **Ищем ВСЁ о творческой вселенной Тима Бёртона:**
-    
-    ✅ **Фильмы и проекты:**
-    - Уэднесдэй (сериал)
-    - Битлджус, Битлджус 2
-    - Эдвард Руки-ножницы
-    - Кошмар перед Рождеством
-    - И все другие фильмы
-    
-    ✅ **Актёры и команда:**
-    - Джонни Депп
-    - Хелена Бонем Картер
-    - Майкл Китон
-    - Вайнона Райдер
-    - Дэнни Эльфман (композитор)
-    - И многие другие
-    
-    ✅ **Темы и стиль:**
-    - Готический стиль Бёртона
-    - Анимационные работы
-    - Биография и интервью
-    - Награды и признание
-    - Культурное влияние
-    """)
-    
-    st.markdown("---")
-    st.markdown("### 📊 Статистика")
-    if search_query and results:
-        st.metric("Длина ответа", f"{len(results)} символов")
-        st.metric("Тема запроса", "Бёртон" if is_burton_universe else "Другое")
+    <script>
+        window.open('https://quixotic-shrimp-ea9.notion.site/9aabb68bd7004965819318e32d8ff06e?v=2b4a0ca7844a80d6aa8a000c6a7e5272', '_blank');
+    </script>
+    """, unsafe_allow_html=True)
 
-# Кнопка "Назад" внизу
+# --- Информация о системе ---
+st.sidebar.markdown("---")
+st.sidebar.markdown("### ℹ️ О системе")
+st.sidebar.markdown("""
+**Технологии:**
+- 🐍 Python + Streamlit
+- 🔍 Google News API (Serper.dev)
+- 🕐 Поиск за последнюю неделю
+- 🇷🇺 Русскоязычные источники
+
+**Обновляется:** Каждые 30 минут
+""")
+
+# --- Футер ---
 st.markdown("---")
-col_back, col_space = st.columns([1, 3])
-with col_back:
-    if st.button("⬅️ На главную", use_container_width=True, type="secondary"):
-        st.markdown("""
-        <script>
-            window.open('https://quixotic-shrimp-ea9.notion.site/9aabb68bd7004965819318e32d8ff06e?v=2b4a0ca7844a80d6aa8a000c6a7e5272', '_blank');
-        </script>
-        """, unsafe_allow_html=True)
+st.markdown("""
+<div style='text-align: center; color: #888; padding: 20px;'>
+    <p>🦇 Система поиска новостей вселенной Тима Бёртона</p>
+    <p><small>Использует Google News API для поиска актуальной информации</small></p>
+</div>
+""", unsafe_allow_html=True)
