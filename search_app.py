@@ -17,53 +17,79 @@ st.markdown("""
         border-radius: 10px;
         border-left: 5px solid #f0e68c;
         margin-bottom: 20px;
-        transition: transform 0.3s;
     }
-    .not-related-box {
-        background-color: #2b2b2b;
-        padding: 20px;
-        border-radius: 10px;
-        border-left: 5px solid #ff6b6b;
-        margin: 20px 0;
+    .google-btn {
+        display: inline-block;
+        background: linear-gradient(45deg, #4285f4, #34a853);
+        color: white !important;
+        padding: 12px 24px;
+        text-decoration: none;
+        border-radius: 5px;
+        font-weight: bold;
+        font-size: 16px;
+        margin: 10px 0;
+        border: none;
+        cursor: pointer;
+        text-align: center;
     }
-    .warning-message {
+    .google-btn:hover {
+        opacity: 0.9;
+    }
+    .back-btn {
+        background: linear-gradient(45deg, #f0e68c, #ff6b6b);
+        color: #0f0f1f !important;
+        padding: 10px 20px;
+        border-radius: 5px;
+        font-weight: bold;
+        text-decoration: none;
+        display: inline-block;
+        margin: 10px 0;
+    }
+    .error-box {
         background-color: #332222;
         color: #ff9999;
-        padding: 15px;
+        padding: 20px;
         border-radius: 10px;
-        border: 1px solid #ff6b6b;
+        border: 2px solid #ff6b6b;
         margin: 20px 0;
     }
 </style>
 """, unsafe_allow_html=True)
 
-# --- Проверка темы запроса ---
+# --- Константы ---
+MAIN_PAGE_URL = "https://quixotic-shrimp-ea9.notion.site/9aabb68bd7004965819318e32d8ff06e?v=2b4a0ca7844a80d6aa8a000c6a7e5272"
+
+# --- Проверка темы ---
 def is_burton_related(query):
     """Проверяет, связан ли запрос с Тимом Бёртоном"""
     query_lower = query.lower()
     
-    # Ключевые слова Бёртона
     burton_keywords = [
-        # Имена и фамилии
-        'буртон', 'burton', 'тим', 'tim',
+        # Основное
+        'буртон', 'burton', 'тим', 'tim', 'бёртон',
+        
         # Фильмы
-        'уэднесдэй', 'wednesday', 'битлджус', 'beetlejuice',
+        'уэднесдэй', 'wednesday', 'уеднесдей', 'венсдей',
+        'битлджус', 'beetlejuice', 'битлджуис',
         'эдвард', 'edward', 'ножницы', 'scissorhands',
         'кошмар', 'nightmare', 'рождество', 'christmas',
         'сонная', 'sleepy', 'лощина', 'hollow',
         'суини', 'sweeney', 'тодд', 'todd',
         'чарли', 'charlie', 'шоколад', 'chocolate',
-        'планета', 'planet', 'обезьян', 'apes',
         'алиса', 'alice', 'страна', 'wonderland',
+        'франкенвини', 'frankenweenie',
+        
         # Актеры
         'депп', 'depp', 'джонни', 'johnny',
         'хелена', 'helena', 'бонем', 'bonham',
         'вайнона', 'winona', 'райдер', 'ryder',
         'майкл', 'michael', 'китон', 'keaton',
         'лиза', 'lisa', 'мэри', 'mary',
+        
         # Команда
         'эльфман', 'elfman', 'дэнни', 'danny',
-        # Общие темы
+        
+        # Темы
         'режиссер', 'режиссёр', 'director',
         'готика', 'готический', 'gothic',
         'анимация', 'animation', 'кукольный',
@@ -72,35 +98,52 @@ def is_burton_related(query):
         'кино', 'cinema', 'сериал', 'series'
     ]
     
-    # Проверяем наличие хотя бы одного ключевого слова
-    for keyword in burton_keywords:
-        if keyword in query_lower:
-            return True
-    
-    return False
+    return any(keyword in query_lower for keyword in burton_keywords)
 
-# --- Создание Google ссылки ---
-def create_google_link(query):
-    """Создает ссылку для поиска в Google"""
-    encoded_query = quote(f"{query}")
-    return f"https://www.google.com/search?q={encoded_query}"
-
-# --- Поиск новостей (только по Бёртону) ---
-@st.cache_data(ttl=3600)
-def search_burton_news(query):
-    """Поиск новостей только по тематике Бёртона"""
-    if not is_burton_related(query):
-        return None, "not_related"
-    
-    try:
-        # Пытаемся получить RSS из Google News
-        search_url = f"https://news.google.com/rss/search?q={quote(f'Тим Бёртон {query}')}&hl=ru&gl=RU&ceid=RU:ru"
-        
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+# --- Получение статичных новостей (запасной вариант) ---
+def get_static_burton_news():
+    """Возвращает статичные новости о Бёртоне (если API недоступно)"""
+    return [
+        {
+            'title': 'Тим Бёртон работает над новыми проектами',
+            'snippet': 'Известный режиссер планирует несколько новых фильмов в своем уникальном готическом стиле.',
+            'source': 'КиноПоиск',
+            'date': '2024',
+            'link': 'https://www.kinopoisk.ru/name/20414/'
+        },
+        {
+            'title': 'Уэднесдэй 2 сезон в разработке',
+            'snippet': 'Netflix подтвердил работу над вторым сезоном сериала "Уэднесдэй" от Тима Бёртона.',
+            'source': 'Netflix News',
+            'date': '2024',
+            'link': 'https://www.netflix.com/title/81231974'
+        },
+        {
+            'title': 'Битлджус 2: новые детали',
+            'snippet': 'Продолжение культового фильма с участием Майкла Китона и Дженны Ортеги.',
+            'source': 'IMDb',
+            'date': '2024',
+            'link': 'https://www.imdb.com/title/tt2049403/'
+        },
+        {
+            'title': 'Выставка работ Тима Бёртона',
+            'snippet': 'В музее современного искусства проходит выставка эскизов и работ режиссера.',
+            'source': 'Арт-новости',
+            'date': '2024',
+            'link': 'https://ru.wikipedia.org/wiki/Бёртон,_Тим'
         }
+    ]
+
+# --- Поиск новостей с резервным вариантом ---
+def search_burton_news_safe(query):
+    """Безопасный поиск новостей с резервным вариантом"""
+    try:
+        # Пробуем получить реальные новости
+        search_terms = f"Тим Бёртон {query}"
+        search_url = f"https://news.google.com/rss/search?q={quote(search_terms)}&hl=ru&gl=RU&ceid=RU:ru"
         
-        response = requests.get(search_url, headers=headers, timeout=10)
+        headers = {'User-Agent': 'Mozilla/5.0'}
+        response = requests.get(search_url, headers=headers, timeout=5)
         
         if response.status_code == 200:
             import xml.etree.ElementTree as ET
@@ -108,19 +151,19 @@ def search_burton_news(query):
             
             articles = []
             for item in root.findall('.//item')[:10]:
-                title = item.find('title').text if item.find('title') is not None else 'Без названия'
+                title = item.find('title').text if item.find('title') is not None else ''
                 link = item.find('link').text if item.find('link') is not None else '#'
-                pub_date = item.find('pubDate').text if item.find('pubDate') is not None else 'Дата неизвестна'
                 
-                # Получаем описание
-                description = ''
-                if item.find('description') is not None:
-                    desc_text = item.find('description').text or ''
-                    description = re.sub('<[^<]+?>', '', desc_text)
-                
-                # Фильтруем статьи, не связанные с Бёртоном
-                article_text = f"{title} {description}".lower()
-                if any(keyword in article_text for keyword in ['буртон', 'burton', 'тим', 'tim']):
+                # Фильтруем только про Бёртона
+                article_text = f"{title}".lower()
+                if any(word in article_text for word in ['буртон', 'burton', 'тим', 'tim']):
+                    description = ''
+                    if item.find('description') is not None:
+                        desc_text = item.find('description').text or ''
+                        description = re.sub('<[^<]+?>', '', desc_text)
+                    
+                    pub_date = item.find('pubDate').text if item.find('pubDate') is not None else ''
+                    
                     articles.append({
                         'title': title,
                         'link': link,
@@ -130,199 +173,185 @@ def search_burton_news(query):
                     })
             
             if articles:
-                return articles, None
+                return articles, True, None
             else:
-                return None, "no_results"
-        else:
-            return None, f"error_{response.status_code}"
-            
+                # Если нет результатов, возвращаем статичные новости
+                return get_static_burton_news(), False, "Используются запасные данные"
+                
     except Exception as e:
-        return None, f"error_{str(e)}"
+        # При любой ошибке возвращаем статичные новости
+        return get_static_burton_news(), False, f"Ошибка: {str(e)}. Используются запасные данные."
+    
+    return get_static_burton_news(), False, "Используются запасные данные"
 
-# === ИНТЕРФЕЙС ПРИЛОЖЕНИЯ ===
+# === ИНТЕРФЕЙС ===
 st.markdown('<h1 class="main-title">🦇 Новости вселенной Тима Бёртона</h1>', unsafe_allow_html=True)
-st.write("Ищите только новости, связанные с Тимом Бёртоном, его фильмами и проектами")
-st.divider()
+st.write("Поиск информации о Тим Бёртоне, его фильмах и проектах")
 
-# --- Быстрые запросы ---
-st.header("🎬 Быстрые запросы о Бёртоне")
+# --- Быстрые кнопки вверху ---
+st.header("🎬 Быстрый поиск")
 
 col1, col2, col3, col4 = st.columns(4)
 with col1:
-    if st.button("Уэднесдэй 2", use_container_width=True):
-        st.session_state.search_query = "Уэднесдэй 2 сезон"
+    if st.button("📺 Уэднесдэй", use_container_width=True):
+        st.session_state.search_query = "Уэднесдэй сериал"
 with col2:
-    if st.button("Битлджус 2", use_container_width=True):
-        st.session_state.search_query = "Битлджус 2 фильм"
+    if st.button("👻 Битлджус 2", use_container_width=True):
+        st.session_state.search_query = "Битлджус 2"
 with col3:
-    if st.button("Джонни Депп", use_container_width=True):
-        st.session_state.search_query = "Джонни Депп Бёртон"
+    if st.button("🎭 Джонни Депп", use_container_width=True):
+        st.session_state.search_query = "Джонни Депп"
 with col4:
-    if st.button("Новые проекты", use_container_width=True):
-        st.session_state.search_query = "новые проекты Тим Бёртон"
+    if st.button("🎨 Стиль Бёртона", use_container_width=True):
+        st.session_state.search_query = "готический стиль"
 
-# --- Поле поиска ---
+# --- Основной поиск ---
 st.header("🔍 Поиск новостей")
-st.write("Введите запрос, связанный с Тимом Бёртоном:")
 
 if 'search_query' not in st.session_state:
     st.session_state.search_query = ""
 
 search_query = st.text_input(
-    "Ваш запрос:",
+    "Введите запрос о Тим Бёртоне:",
     value=st.session_state.search_query,
-    placeholder="Например: выставка Бёртона, интервью Тим Бёртон, готический стиль...",
+    placeholder="Например: новые проекты, выставка, интервью...",
     label_visibility="collapsed"
 )
 
-# --- Обработка поиска ---
-if st.button("🔍 Найти новости", type="primary", use_container_width=True):
-    if not search_query:
-        st.warning("⚠️ Пожалуйста, введите запрос")
-    else:
-        st.session_state.search_query = search_query
-        
-        # Проверяем, связан ли запрос с Бёртоном
-        if not is_burton_related(search_query):
-            st.markdown(f"""
-            <div class="warning-message">
-                <h3>🦇 Этот запрос не связан с Тимом Бёртоном</h3>
-                <p>Вы искали: <strong>{search_query}</strong></p>
-                <p>Эта система ищет только информацию, связанную с Тимом Бёртоном, его фильмами, актерами и проектами.</p>
-            </div>
-            """, unsafe_allow_html=True)
-            
-            # Предлагаем поиск в Google
-            google_url = create_google_link(search_query)
-            st.markdown(f"""
-            <div class="not-related-box">
-                <h3 style="color: #ff6b6b;">🔍 Попробуйте поискать в Google:</h3>
-                <a href="{google_url}" target="_blank" style="
-                    display: inline-block;
-                    background: linear-gradient(45deg, #4285f4, #34a853);
-                    color: white;
-                    padding: 12px 24px;
-                    text-decoration: none;
-                    border-radius: 5px;
-                    font-weight: bold;
-                    font-size: 16px;
-                    margin-top: 10px;
-                ">
-                🔎 Поиск "{search_query}" в Google
-                </a>
-                <p style="color: #ccc; margin-top: 10px; font-size: 14px;">
-                Ссылка откроется в новой вкладке
-                </p>
-            </div>
-            """, unsafe_allow_html=True)
-            
-            # Показываем примеры запросов по Бёртону
-            st.markdown("---")
-            st.subheader("💡 Примеры запросов о Бёртоне:")
-            
-            examples = [
-                "Тим Бёртон интервью 2024",
-                "Выставка работ Бёртона",
-                "Готический стиль в фильмах",
-                "Дэнни Эльфман музыка",
-                "Хелена Бонем Картер"
-            ]
-            
-            cols = st.columns(3)
-            for i, example in enumerate(examples):
-                with cols[i % 3]:
-                    if st.button(example, use_container_width=True):
-                        st.session_state.search_query = example
-                        st.rerun()
-        else:
-            # Если запрос связан с Бёртоном, ищем новости
-            with st.spinner(f"🦇 Ищу новости по теме '{search_query}'..."):
-                articles, error = search_burton_news(search_query)
-                
-                if error == "not_related":
-                    st.error("Этот запрос не связан с Тимом Бёртоном")
-                elif error == "no_results":
-                    st.info(f"📭 По запросу '{search_query}' не найдено новостей о Бёртоне")
-                    
-                    # Предлагаем альтернативные запросы
-                    st.markdown("### 💡 Попробуйте:")
-                    alt_queries = [
-                        "Тим Бёртон",
-                        "Burton films",
-                        "Проекты Бёртона"
-                    ]
-                    
-                    for alt in alt_queries:
-                        if st.button(f"🔍 {alt}", key=f"alt_{alt}"):
-                            st.session_state.search_query = alt
-                            st.rerun()
-                elif error and error.startswith("error"):
-                    st.error(f"Ошибка при поиске: {error}")
-                    
-                    # Все равно предлагаем Google поиск
-                    google_url = create_google_link(f"Тим Бёртон {search_query}")
-                    st.markdown(f"""
-                    <div style="background-color: #2b2b2b; padding: 15px; border-radius: 10px; margin: 20px 0;">
-                        <p>Вы можете попробовать поискать напрямую:</p>
-                        <a href="{google_url}" target="_blank" style="color: #4285f4; font-weight: bold;">
-                        🔍 Поиск "Тим Бёртон {search_query}" в Google
-                        </a>
-                    </div>
-                    """, unsafe_allow_html=True)
-                elif articles:
-                    st.success(f"🎭 Найдено новостей: {len(articles)}")
-                    
-                    for idx, article in enumerate(articles):
-                        with st.container():
-                            st.markdown(f"""
-                            <div class="news-card">
-                                <h4 style="color: #f0e68c; margin: 0;">{article['title']}</h4>
-                                <p style="color: #ccc; font-size: 0.85em; margin: 5px 0;">
-                                📰 {article.get('source', 'Источник')} | 📅 {article.get('date', '')}
-                                </p>
-                                <p style="color: #e0e0e0; margin: 10px 0;">{article.get('snippet', '')}</p>
-                                <a href="{article['link']}" target="_blank" style="color: #ff6b6b; text-decoration: none;">
-                                🔗 Открыть статью
-                                </a>
-                            </div>
-                            """, unsafe_allow_html=True)
+# Кнопки в одной строке
+col_search, col_back = st.columns([3, 1])
 
-# --- Информация в сайдбаре ---
+with col_search:
+    search_clicked = st.button("🔍 Найти новости", type="primary", use_container_width=True)
+
+with col_back:
+    # ПРОСТАЯ КНОПКА "НА ГЛАВНУЮ" С ССЫЛКОЙ
+    if st.button("🏠 На главную", use_container_width=True):
+        # Используем markdown с прямой ссылкой
+        st.markdown(f"""
+        <div style="text-align: center; margin: 20px 0;">
+            <a href="{MAIN_PAGE_URL}" target="_blank" class="back-btn">
+            ⬅️ Перейти на главную
+            </a>
+        </div>
+        """, unsafe_allow_html=True)
+
+# --- Обработка поиска ---
+if search_clicked and search_query:
+    if not is_burton_related(search_query):
+        st.markdown(f"""
+        <div class="error-box">
+            <h3>🦇 Этот запрос не связан с Тимом Бёртоном</h3>
+            <p>Вы искали: <strong>"{search_query}"</strong></p>
+            <p>Эта система ищет только информацию о Тим Бёртоне, его фильмах, актерах и проектах.</p>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # ОДНА ссылка на Google
+        google_url = f"https://www.google.com/search?q={quote(search_query)}"
+        st.markdown(f"""
+        <div style="text-align: center; margin: 30px 0;">
+            <a href="{google_url}" target="_blank" class="google-btn">
+            🔍 Поиск в Google: "{search_query}"
+            </a>
+        </div>
+        """, unsafe_allow_html=True)
+    else:
+        with st.spinner("🦇 Ищу новости..."):
+            articles, is_real, message = search_burton_news_safe(search_query)
+            
+            if message:
+                st.info(f"ℹ️ {message}")
+            
+            if articles:
+                st.success(f"🎭 Найдено новостей: {len(articles)}")
+                
+                for article in articles:
+                    with st.container():
+                        st.markdown(f"""
+                        <div class="news-card">
+                            <h4 style="color: #f0e68c;">{article['title']}</h4>
+                            <p style="color: #ccc; font-size: 0.9em;">
+                            📰 <strong>{article['source']}</strong> | 
+                            📅 {article['date']}
+                            </p>
+                            <p style="color: #e0e0e0;">{article['snippet']}</p>
+                            <a href="{article['link']}" target="_blank" 
+                               style="color: #ff6b6b; text-decoration: none; font-weight: bold;">
+                            🔗 Читать подробнее
+                            </a>
+                        </div>
+                        """, unsafe_allow_html=True)
+            else:
+                st.info("📭 Новостей не найдено")
+
+# --- Боковая панель ---
 with st.sidebar:
-    st.markdown("### 🦇 О системе поиска")
+    st.markdown("### 🦇 О системе")
     st.markdown("""
-    **Ищем только информацию о:**
-    
-    ✅ **Тим Бёртон:**
-    - Фильмы и проекты
-    - Актеры команды
-    - Композиторы и команда
-    - Выставки и события
+    **Что мы ищем:**
+    - Фильмы и проекты Бёртона
+    - Актеры его команды
+    - События и выставки
     - Интервью и новости
     
-    ✅ **Примеры запросов:**
-    - "Уэднесдэй 2 сезон"
-    - "Битлджус 2 фильм"
-    - "Стиль Бёртона"
-    - "Дэнни Эльфман"
-    - "Выставка Бёртона"
-    
+    **Примеры запросов:**
+    - Уэднесдэй 2 сезон
+    - Битлджус 2 фильм
+    - Джонни Депп
+    - Дэнни Эльфман
+    - Выставка Бёртона
     """)
     
     st.markdown("---")
-    st.markdown("### 🔙 Навигация")
-    if st.button("⬅️ На главную страницу", use_container_width=True):
-        st.markdown("""
-        <script>
-            window.open('https://quixotic-shrimp-ea9.notion.site/9aabb68bd7004965819318e32d8ff06e?v=2b4a0ca7844a80d6aa8a000c6a7e5272', '_blank');
-        </script>
+    st.markdown("### 🔗 Полезные ссылки")
+    
+    # Ссылки в сайдбаре
+    links = [
+        ("📖 Википедия", "https://ru.wikipedia.org/wiki/Бёртон,_Тим"),
+        ("🎬 IMDb", "https://www.imdb.com/name/nm0000318/"),
+        ("📺 Netflix", "https://www.netflix.com/title/81231974"),
+    ]
+    
+    for icon, url in links:
+        st.markdown(f'<a href="{url}" target="_blank" style="color: #f0e68c; text-decoration: none; display: block; margin: 5px 0;">{icon} {url.split("//")[-1].split("/")[0]}</a>', unsafe_allow_html=True)
+    
+    st.markdown("---")
+    
+    # Кнопка "На главную" в сайдбаре
+    if st.button("⬅️ Вернуться на главную", use_container_width=True, key="sidebar_back"):
+        # Прямая ссылка в markdown
+        st.markdown(f"""
+        <div style="text-align: center; margin-top: 20px;">
+            <a href="{MAIN_PAGE_URL}" target="_blank" 
+               style="display: inline-block; padding: 10px 20px; background: #f0e68c; 
+                      color: #0f0f1f; border-radius: 5px; text-decoration: none; font-weight: bold;">
+            🏠 Открыть главную страницу
+            </a>
+        </div>
         """, unsafe_allow_html=True)
 
-# --- Футер ---
+# --- Информация внизу ---
 st.markdown("---")
-st.markdown("""
-<div style='text-align: center; color: #888; padding: 20px; font-size: 0.9em;'>
-    <p>🦇 Поиск новостей вселенной Тима Бёртона • Только релевантная информация</p>
-    <p><small>Запросы фильтруются по тематике Бёртона</small></p>
+st.markdown(f"""
+<div style="text-align: center; color: #888; padding: 20px;">
+    <p>🦇 Система поиска новостей о Тим Бёртоне</p>
+    <p>
+        <a href="{MAIN_PAGE_URL}" target="_blank" style="color: #f0e68c; text-decoration: none;">
+        🔗 Главная страница проекта
+        </a>
+    </p>
+</div>
+""", unsafe_allow_html=True)
+
+# --- Дополнительная ссылка внизу для надежности ---
+st.markdown(f"""
+<div style="position: fixed; bottom: 10px; right: 10px; z-index: 1000;">
+    <a href="{MAIN_PAGE_URL}" target="_blank" 
+       style="background: #f0e68c; color: #0f0f1f; padding: 8px 15px; 
+              border-radius: 20px; text-decoration: none; font-size: 12px;
+              box-shadow: 0 2px 5px rgba(0,0,0,0.3);">
+       🏠 На главную
+    </a>
 </div>
 """, unsafe_allow_html=True)
