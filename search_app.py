@@ -1,479 +1,455 @@
 import streamlit as st
-import requests
-from urllib.parse import quote
-import json
 import feedparser
+import requests
+from datetime import datetime, timedelta
+import pandas as pd
+from bs4 import BeautifulSoup
+import json
 import time
 
-# --- Настройки страницы ---
-st.set_page_config(page_title="Новости Тим Бёртона", layout="wide")
+# ==================== НАСТРОЙКИ ====================
+st.set_page_config(
+    page_title="Поиск новостей о Тим Бёртоне",
+    page_icon="🎬",
+    layout="wide"
+)
 
+# ==================== CSS СТИЛИ ====================
 st.markdown("""
 <style>
-    .stApp { background-color: #0f0f1f; }
-    .main-title { color: #f0e68c; text-align: center; margin-bottom: 30px; }
+    .stApp {
+        background-color: #0e1117;
+        color: #fafafa;
+    }
     .news-card {
-        background-color: #2b2b2b;
+        background: linear-gradient(135deg, #1e1e2e 0%, #2d2d44 100%);
+        border-radius: 10px;
         padding: 20px;
-        border-radius: 10px;
-        border-left: 5px solid #f0e68c;
-        margin-bottom: 20px;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        margin-bottom: 15px;
+        border-left: 5px solid #ff4b4b;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
     }
-    .live-news {
-        border-left: 5px solid #34a853;
+    .news-card-internet {
+        border-left: 5px solid #00ff00 !important;
     }
-    .static-news {
-        border-left: 5px solid #ff6b6b;
+    .news-card-database {
+        border-left: 5px solid #ffaa00 !important;
     }
-    .not-related-card {
-        background-color: #22222b;
-        padding: 25px;
-        border-radius: 10px;
-        border: 2px solid #4285f4;
-        margin: 25px 0;
-        text-align: center;
-    }
-    .google-btn {
+    .source-badge {
         display: inline-block;
-        background: linear-gradient(45deg, #4285f4, #34a853);
-        color: white !important;
-        padding: 12px 24px;
-        text-decoration: none;
-        border-radius: 5px;
-        font-weight: bold;
-        font-size: 16px;
-        margin: 15px 0;
-        border: none;
-        cursor: pointer;
-        transition: transform 0.2s;
-    }
-    .google-btn:hover {
-        transform: scale(1.05);
-    }
-    .back-btn {
-        background: linear-gradient(45deg, #f0e68c, #d4af37);
-        color: #0f0f1f !important;
-        padding: 12px 24px;
-        border-radius: 5px;
-        font-weight: bold;
-        text-decoration: none;
-        display: block;
-        margin: 20px auto;
-        border: none;
-        cursor: pointer;
-        text-align: center;
-        width: 80%;
-        max-width: 300px;
-    }
-    .badge-live {
-        background: #34a853;
+        background: #ff4b4b;
         color: white;
         padding: 3px 10px;
-        border-radius: 12px;
+        border-radius: 15px;
         font-size: 0.8em;
-        font-weight: bold;
-        margin-left: 10px;
+        margin-right: 10px;
     }
-    .badge-static {
-        background: #ff6b6b;
+    .internet-badge {
+        background: #00cc44 !important;
+    }
+    .database-badge {
+        background: #ff9900 !important;
+    }
+    h1, h2, h3 {
+        color: #ff4b4b !important;
+    }
+    .stButton > button {
+        background: linear-gradient(135deg, #ff4b4b 0%, #ff6b6b 100%);
         color: white;
-        padding: 3px 10px;
-        border-radius: 12px;
-        font-size: 0.8em;
+        border: none;
+        border-radius: 8px;
+        padding: 10px 20px;
         font-weight: bold;
-        margin-left: 10px;
+    }
+    .stButton > button:hover {
+        background: linear-gradient(135deg, #ff3333 0%, #ff5555 100%);
     }
 </style>
 """, unsafe_allow_html=True)
 
-# --- Константы ---
-MAIN_PAGE_URL = "https://quixotic-shrimp-ea9.notion.site/9aabb68bd7004965819318e32d8ff06e?v=2b4a0ca7844a80d6aa8a000c6a7e5272"
+# ==================== БАЗА ДАННЫХ (ЗАГРУШЕННЫЕ НОВОСТИ) ====================
+def load_database_news():
+    """Загружает предварительно сохраненные новости из 'базы данных'"""
+    database_news = [
+        {
+            "title": "Уоднесдэй 2 сезон: Netflix анонсировал съемки",
+            "source": "Deadline Hollywood",
+            "date": "2024",
+            "summary": "Второй сезон сериала 'Уоднесдэй' с Дженной Ортегой начнут снимать весной 2024 года.",
+            "url": "https://deadline.com/2023/11/wednesday-season-2-netflix-release-date-1235601234/",
+            "type": "database"
+        },
+        {
+            "title": "Тим Бёртон о работе над 'Уоднесдэй'",
+            "source": "Variety",
+            "date": "2023",
+            "summary": "Режиссер Тим Бёртон рассказал о своем подходе к созданию атмосферы в сериале 'Уоднесдэй'.",
+            "url": "https://variety.com/2023/tv/news/tim-burton-wednesday-netflix-interview-1235489123/",
+            "type": "database"
+        },
+        {
+            "title": "Битлджус 2: возвращение культового фильма",
+            "source": "Hollywood Reporter",
+            "date": "2024",
+            "summary": "Тим Бёртон подтвердил работу над сиквелом 'Битлджуса', выход намечен на 2025 год.",
+            "url": "https://www.hollywoodreporter.com/movies/movie-news/beetlejuice-2-tim-burton-return-1235678901/",
+            "type": "database"
+        },
+        {
+            "title": "Джонни Депп и Тим Бёртон: история сотрудничества",
+            "source": "Empire",
+            "date": "2023",
+            "summary": "Вспоминаем все фильмы, которые создали легендарный дуэт Бёртона и Деппа.",
+            "url": "https://www.empireonline.com/movies/features/tim-burton-johnny-depp-collaboration-history/",
+            "type": "database"
+        }
+    ]
+    return database_news
 
-# --- Проверка темы запроса ---
-def is_burton_related(query):
-    """Проверяет, связан ли запрос с Тимом Бёртоном"""
-    query_lower = query.lower()
+# ==================== ПОИСК В ИНТЕРНЕТЕ (RSS) ====================
+def search_rss_news(query, max_results=15):
+    """
+    Ищет новости по RSS-лентам на основе запроса
+    Возвращает список статей
+    """
+    articles = []
     
-    burton_keywords = [
-        # Имена
-        'буртон', 'burton', 'тим', 'tim', 'бёртон',
-        # Фильмы и проекты
-        'уэднесдэй', 'wednesday', 'уеднесдей', 'венсдей',
-        'битлджус', 'beetlejuice', 'битлджуис',
-        'эдвард', 'edward', 'ножницы', 'scissorhands',
-        'кошмар', 'nightmare', 'рождество', 'christmas',
-        'сонная', 'sleepy', 'лощина', 'hollow',
-        'суини', 'sweeney', 'тодд', 'todd',
-        'чарли', 'charlie', 'шоколад', 'chocolate',
-        'алиса', 'alice', 'страна', 'wonderland',
-        'франкенвини', 'frankenweenie', 'дом странных',
-        'дамбо', 'dumbo', 'темные тени', 'dark shadows',
-        # Актеры
-        'депп', 'depp', 'джонни', 'johnny',
-        'хелена', 'helena', 'бонем', 'bonham',
-        'вайнона', 'winona', 'райдер', 'ryder',
-        'майкл', 'michael', 'китон', 'keaton',
-        'лиза', 'lisa', 'мэри', 'mary',
-        'ева', 'eva', 'грин', 'green',
-        # Команда
-        'эльфман', 'elfman', 'дэнни', 'danny',
-        'этвуд', 'atwood', 'коллин', 'colleen',
-        # Темы
-        'режиссер', 'режиссёр', 'director',
-        'готика', 'готический', 'gothic',
-        'анимация', 'animation', 'кукольный',
-        'стиль', 'style', 'выставка', 'exhibition',
-        'проект', 'project', 'фильм', 'movie',
-        'кино', 'cinema', 'сериал', 'series'
+    # RSS-ленты новостных сайтов о кино и развлечениях
+    rss_feeds = [
+        {
+            "url": "https://deadline.com/feed/",
+            "name": "Deadline Hollywood",
+            "category": "film"
+        },
+        {
+            "url": "https://variety.com/feed/",
+            "name": "Variety",
+            "category": "entertainment"
+        },
+        {
+            "url": "https://www.hollywoodreporter.com/feed/",
+            "name": "Hollywood Reporter",
+            "category": "film"
+        },
+        {
+            "url": "https://www.theguardian.com/film/rss",
+            "name": "The Guardian Film",
+            "category": "film"
+        },
+        {
+            "url": "https://www.indiewire.com/feed/",
+            "name": "IndieWire",
+            "category": "film"
+        }
     ]
     
-    return any(keyword in query_lower for keyword in burton_keywords)
-
-# --- Поиск настоящих новостей из интернета ---
-def search_real_news(query):
-    """Ищет настоящие новости из разных источников"""
-    try:
-        # 1. Поиск через Google News RSS
-        search_terms = f"Тим Бёртон {query}"
-        rss_url = f"https://news.google.com/rss/search?q={quote(search_terms)}&hl=ru&gl=RU&ceid=RU:ru"
-        
-        # Увеличиваем таймаут и добавляем заголовки
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-            'Accept': 'application/rss+xml, application/xml, text/xml'
-        }
-        
-        response = requests.get(rss_url, headers=headers, timeout=10)
-        
-        if response.status_code == 200:
-            import xml.etree.ElementTree as ET
-            root = ET.fromstring(response.content)
-            
-            real_articles = []
-            for item in root.findall('.//item')[:8]:  # Берем больше новостей
-                title = item.find('title').text if item.find('title') is not None else ''
-                link = item.find('link').text if item.find('link') is not None else '#'
-                
-                # Проверяем релевантность
-                if title and ('буртон' in title.lower() or 'burton' in title.lower()):
-                    import re
-                    description = ''
-                    if item.find('description') is not None:
-                        desc_text = item.find('description').text or ''
-                        description = re.sub('<[^<]+?>', '', desc_text)
-                    
-                    pub_date = item.find('pubDate').text if item.find('pubDate') is not None else ''
-                    
-                    real_articles.append({
-                        'title': title,
-                        'link': link,
-                        'snippet': description[:250] + '...' if len(description) > 250 else description,
-                        'source': 'Google News',
-                        'date': pub_date[:25] if pub_date else 'Недавно',
-                        'type': 'live'
-                    })
-            
-            if real_articles:
-                return real_articles, True
-        
-        # 2. Альтернативный источник: Bing News
+    search_terms = query.lower().split()
+    
+    for feed_info in rss_feeds:
         try:
-            bing_url = f"https://www.bing.com/news/search?q={quote(search_terms)}&format=RSS"
-            bing_response = requests.get(bing_url, headers=headers, timeout=5)
+            st.info(f"🔍 Ищем в {feed_info['name']}...")
             
-            if bing_response.status_code == 200:
-                import xml.etree.ElementTree as ET
-                bing_root = ET.fromstring(bing_response.content)
+            # Парсим RSS
+            feed = feedparser.parse(feed_info['url'])
+            
+            for entry in feed.entries[:20]:  # Проверяем первые 20 записей
+                # Проверяем совпадение в заголовке
+                title = entry.title.lower() if hasattr(entry, 'title') else ""
+                summary = entry.summary.lower() if hasattr(entry, 'summary') else ""
+                description = entry.description.lower() if hasattr(entry, 'description') else ""
                 
-                for item in bing_root.findall('.//item')[:4]:
-                    title = item.find('title').text if item.find('title') is not None else ''
-                    link = item.find('link').text if item.find('link') is not None else '#'
+                content = f"{title} {summary} {description}"
+                
+                # Проверяем все слова запроса
+                match_score = sum(1 for term in search_terms if term in content)
+                
+                if match_score > 0:  # Если найдено хотя бы одно слово
+                    # Извлекаем дату
+                    if hasattr(entry, 'published_parsed'):
+                        date = datetime(*entry.published_parsed[:6])
+                        date_str = date.strftime("%d.%m.%Y")
+                    elif hasattr(entry, 'published'):
+                        date_str = entry.published
+                    else:
+                        date_str = "Дата неизвестна"
                     
-                    if title and 'буртон' in title.lower():
-                        import re
-                        description = ''
-                        if item.find('description') is not None:
-                            desc_text = item.find('description').text or ''
-                            description = re.sub('<[^<]+?>', '', desc_text)
-                        
-                        real_articles.append({
-                            'title': title,
-                            'link': link,
-                            'snippet': description[:200] + '...' if len(description) > 200 else description,
-                            'source': 'Bing News',
-                            'date': 'Недавно',
-                            'type': 'live'
-                        })
-        except:
-            pass  # Игнорируем ошибки Bing
-        
-        if real_articles:
-            return real_articles[:10], True  # Ограничиваем 10 новостями
+                    # Извлекаем описание
+                    if hasattr(entry, 'summary'):
+                        # Очищаем HTML теги
+                        soup = BeautifulSoup(entry.summary, 'html.parser')
+                        summary_text = soup.get_text()[:200] + "..."
+                    else:
+                        summary_text = "Описание отсутствует"
+                    
+                    article = {
+                        "title": entry.title,
+                        "source": feed_info['name'],
+                        "date": date_str,
+                        "summary": summary_text,
+                        "url": entry.link,
+                        "type": "internet",
+                        "match_score": match_score
+                    }
+                    articles.append(article)
+                    
+                    if len(articles) >= max_results:
+                        break
             
+            time.sleep(0.5)  # Небольшая пауза между запросами
+            
+        except Exception as e:
+            st.warning(f"⚠️ Ошибка при чтении {feed_info['name']}: {str(e)[:100]}...")
+            continue
+    
+    # Сортируем по релевантности
+    articles.sort(key=lambda x: x['match_score'], reverse=True)
+    return articles[:max_results]
+
+# ==================== ДОПОЛНИТЕЛЬНЫЙ ПОИСК ЧЕРЕЗ GOOGLE NEWS RSS ====================
+def search_google_news_rss(query, max_results=10):
+    """Ищет новости через Google News RSS"""
+    try:
+        # Формируем URL для Google News RSS
+        formatted_query = query.replace(" ", "+")
+        url = f"https://news.google.com/rss/search?q={formatted_query}+Тим+Бёртон&hl=ru&gl=RU&ceid=RU:ru"
+        
+        feed = feedparser.parse(url)
+        articles = []
+        
+        for entry in feed.entries[:max_results]:
+            article = {
+                "title": entry.title,
+                "source": entry.source.title if hasattr(entry, 'source') else "Google News",
+                "date": entry.published if hasattr(entry, 'published') else "Дата неизвестна",
+                "summary": entry.title,  # У Google News часто нет отдельного summary
+                "url": entry.link,
+                "type": "internet",
+                "match_score": 3
+            }
+            articles.append(article)
+        
+        return articles
     except Exception as e:
-        print(f"Ошибка поиска новостей: {e}")
-    
-    return [], False
+        st.warning(f"⚠️ Ошибка Google News RSS: {str(e)[:100]}")
+        return []
 
-# --- Статические данные (резервные) ---
-def get_static_articles(query):
-    """Возвращает релевантные статические статьи по запросу"""
-    query_lower = query.lower()
+# ==================== ОТОБРАЖЕНИЕ НОВОСТЕЙ ====================
+def display_article(article, index):
+    """Отображает одну новость в красивом формате"""
+    card_class = "news-card-internet" if article["type"] == "internet" else "news-card-database"
+    badge_class = "internet-badge" if article["type"] == "internet" else "database-badge"
+    badge_text = "🌐 ИНТЕРНЕТ" if article["type"] == "internet" else "💾 БАЗА"
     
-    all_articles = [
-        # Уэднесдэй
-        {
-            'title': 'Уэднесдэй 2 сезон: Netflix анонсировал съемки',
-            'snippet': 'Второй сезон сериала "Уэднесдэй" с Дженной Ортегой начнут снимать весной 2024 года.',
-            'source': 'Deadline Hollywood',
-            'date': '2024',
-            'link': 'https://deadline.com',
-            'type': 'static'
-        },
-        {
-            'title': 'Тим Бёртон о работе над "Уэднесдэй"',
-            'snippet': 'Режиссер рассказал о своем видении персонажа Уэднесдэй Аддамс в интервью Variety.',
-            'source': 'Variety',
-            'date': '2024',
-            'link': 'https://variety.com',
-            'type': 'static'
-        },
-        
-        # Битлджус
-        {
-            'title': 'Битлджус 2: первые кадры со съемок',
-            'snippet': 'В сети появились фото со съемочной площадки сиквела с Майклом Китоном и Дженной Ортегой.',
-            'source': 'Entertainment Weekly',
-            'date': '2024',
-            'link': 'https://ew.com',
-            'type': 'static'
-        },
-        
-        # Джонни Депп
-        {
-            'title': 'Джонни Депп может вернуться к сотрудничеству с Бёртоном',
-            'snippet': 'По слухам, актер ведет переговоры об участии в новом проекте режиссера.',
-            'source': 'The Hollywood Reporter',
-            'date': '2024',
-            'link': 'https://www.hollywoodreporter.com',
-            'type': 'static'
-        },
-        
-        # Общее
-        {
-            'title': 'Тим Бёртон: новая выставка в Нью-Йорке',
-            'snippet': 'Музей современного искусства представляет ретроспективу работ режиссера.',
-            'source': 'MoMA',
-            'date': '2024',
-            'link': 'https://www.moma.org',
-            'type': 'static'
-        },
-        {
-            'title': 'Влияние готического стиля Бёртона на моду',
-            'snippet': 'Дизайнеры вдохновляются эстетикой фильмов режиссера в новых коллекциях.',
-            'source': 'Vogue',
-            'date': '2024',
-            'link': 'https://www.vogue.com',
-            'type': 'static'
-        }
-    ]
-    
-    # Фильтруем по релевантности запросу
-    relevant_articles = []
-    for article in all_articles:
-        article_text = f"{article['title']} {article['snippet']}".lower()
-        
-        if query_lower in ['уэднесдэй', 'wednesday'] and any(word in article_text for word in ['уэднесдэй', 'wednesday']):
-            relevant_articles.append(article)
-        elif query_lower in ['битлджус', 'beetlejuice'] and any(word in article_text for word in ['битлджус', 'beetlejuice']):
-            relevant_articles.append(article)
-        elif query_lower in ['депп', 'depp', 'джонни'] and any(word in article_text for word in ['депп', 'depp']):
-            relevant_articles.append(article)
-        elif query_lower in ['готика', 'готический', 'gothic', 'стиль'] and any(word in article_text for word in ['готи', 'стиль', 'gothic']):
-            relevant_articles.append(article)
-        elif query_lower in ['проект', 'project', 'новый', 'фильм']:
-            relevant_articles.append(article)
-    
-    # Если нет специфичных, возвращаем все
-    if not relevant_articles:
-        relevant_articles = all_articles[:4]
-    
-    return relevant_articles
+    st.markdown(f"""
+    <div class="news-card {card_class}">
+        <h4>{article['title']}</h4>
+        <p>
+            <span class="source-badge {badge_class}">{badge_text}</span>
+            <span class="source-badge">{article['source']}</span>
+            <span style="color: #888;">| {article['date']}</span>
+        </p>
+        <p>{article['summary']}</p>
+        <a href="{article['url']}" target="_blank" style="color: #ff4b4b; text-decoration: none;">📖 Читать полностью →</a>
+    </div>
+    """, unsafe_allow_html=True)
 
-# === ИНТЕРФЕЙС ПРИЛОЖЕНИЯ ===
-st.markdown('<h1 class="main-title">🦇 Актуальные новости о Тим Бёртоне</h1>', unsafe_allow_html=True)
-st.write("Поиск свежих новостей и информации из интернета")
-
-# --- САЙДБАР (правая шторка с примерами запросов) ---
-with st.sidebar:
-    st.markdown("### 📋 Примеры запросов")
-    st.markdown("""
-    **🎬 Фильмы и сериалы:**
-    - Уэднесдэй 2 сезон
-    - Битлджус 2 новости
-    - Эдвард Руки-ножницы
-    - Кошмар перед Рождеством
+# ==================== ОСНОВНОЙ ИНТЕРФЕЙС ====================
+def main():
+    # Заголовок
+    st.title("🎬 Поиск новостей о Тим Бёртоне")
+    st.markdown("---")
     
-    **🎭 Актеры и команда:**
-    - Джонни Депп и Бёртон
-    - Хелена Бонем Картер
-    - Дэнни Эльфман музыка
-    - Вайнона Райдер
+    # Боковая панель
+    with st.sidebar:
+        st.header("⚙️ Настройки поиска")
+        
+        search_mode = st.radio(
+            "Режим поиска:",
+            ["🌐 Только из интернета", "💾 Только из базы", "🔍 Везде"],
+            index=2
+        )
+        
+        st.markdown("---")
+        st.header("🔎 Быстрый поиск")
+        
+        quick_queries = ["Уоднесдэй 2", "Битлджус 2", "Джонни Депп", "Тим Бёртон", "Новые проекты"]
+        
+        for q in quick_queries:
+            if st.button(q, key=f"quick_{q}"):
+                st.session_state.search_query = q
+        
+        st.markdown("---")
+        st.info("""
+        **📢 Примечание:**
+        - Поиск в интернете может занять 10-30 секунд
+        - Некоторые сайты могут блокировать RSS-запросы
+        - Для более точного поиска используйте английские названия
+        """)
     
-    **🏛️ События:**
-    - Выставка Бёртона 2024
-    - Интервью Тим Бёртон
-    - Готический стиль
-    - Новые проекты
+    # Основная область
+    col1, col2 = st.columns([3, 1])
     
-    **💡 Советы:**
-    - Используйте конкретные названия
-    - Добавляйте "новости" или "2024"
-    - Указывайте имена актеров
-    """)
+    with col1:
+        # Поле поиска
+        if 'search_query' not in st.session_state:
+            st.session_state.search_query = ""
+        
+        query = st.text_input(
+            "**Введите запрос:**",
+            value=st.session_state.search_query,
+            placeholder="Например: 'Tim Burton new movie', 'Уоднесдэй 2 сезон'..."
+        )
+    
+    with col2:
+        st.markdown("###")
+        search_button = st.button("🔍 Начать поиск", type="primary", use_container_width=True)
     
     st.markdown("---")
-    st.markdown("### 🔍 Как работает поиск")
-    st.markdown("""
-    1. **Ищет реальные новости** из Google News
-    2. **Проверяет актуальность** (последняя неделя)
-    3. **Фильтрует по теме** Бёртона
-    4. **Показывает прямые ссылки** на статьи
     
-    🟢 **Живые новости** - из интернета
-    🔴 **Статьи из базы** - если новостей нет
-    """)
-    
-    st.markdown("---")
-    st.markdown("### 🦇 О системе")
-    st.markdown("""
-    **Цель:** Находить самую свежую информацию о Тим Бёртоне из открытых источников.
-    
-    **Обновляется:** В реальном времени
-    **Источники:** Google News, Bing News
-    **Язык:** Русский и английский
-    """)
-
-# --- Основная область ---
-st.header("🚀 Поиск свежих новостей")
-
-# Быстрые кнопки
-st.subheader("⚡ Быстрый поиск:")
-col1, col2, col3 = st.columns(3)
-with col1:
-    if st.button("📺 Уэднесдэй 2", use_container_width=True):
-        st.session_state.search_query = "Уэднесдэй 2 сезон новости 2024"
-with col2:
-    if st.button("👻 Битлджус 2", use_container_width=True):
-        st.session_state.search_query = "Битлджус 2 фильм новости"
-with col3:
-    if st.button("🎭 Джонни Депп", use_container_width=True):
-        st.session_state.search_query = "Джонни Депп Тим Бёртон новости"
-
-# Поле поиска
-st.subheader("🔍 Введите запрос:")
-
-if 'search_query' not in st.session_state:
-    st.session_state.search_query = ""
-
-search_query = st.text_input(
-    "Что вы хотите найти о Тим Бёртоне?",
-    value=st.session_state.search_query,
-    placeholder="Например: последние новости об Уэднесдэй, интервью Бёртона...",
-    label_visibility="collapsed"
-)
-
-# Кнопка поиска
-search_clicked = st.button("🔎 Искать свежие новости", type="primary", use_container_width=True)
-
-# --- Обработка поиска ---
-if search_clicked and search_query:
-    if not search_query:
-        st.warning("Введите запрос для поиска")
-    else:
-        st.session_state.search_query = search_query
+    # Если нажата кнопка поиска
+    if search_button and query:
+        st.session_state.search_query = query
         
-        # Проверяем тему
-        if not is_burton_related(search_query):
-            st.markdown(f"""
-            <div class="not-related-card">
-                <h3 style="color: #4285f4;">⚠️ Этот запрос не связан с Тимом Бёртоном</h3>
-                <p>Вы искали: <strong>"{search_query}"</strong></p>
-                <p>Эта система ищет только информацию о Тим Бёртоне, его фильмах и проектах.</p>
+        # Показываем индикатор поиска
+        search_placeholder = st.empty()
+        
+        with search_placeholder.container():
+            st.subheader(f"Результаты поиска: '{query}'")
+            
+            # Прогресс бар
+            progress_bar = st.progress(0)
+            status_text = st.empty()
+            
+            all_articles = []
+            
+            # ========== ПОИСК В ИНТЕРНЕТЕ ==========
+            if search_mode in ["🌐 Только из интернета", "🔍 Везде"]:
+                status_text.text("🔍 Ищу свежие новости в интернете...")
                 
-                <a href="https://www.google.com/search?q={quote(search_query)}" 
-                   target="_blank" 
-                   class="google-btn">
-                🔍 Найти в Google
-                </a>
-            </div>
-            """, unsafe_allow_html=True)
+                # Поиск через RSS новостных сайтов
+                progress_bar.progress(30)
+                rss_articles = search_rss_news(query, max_results=10)
+                
+                # Поиск через Google News RSS
+                progress_bar.progress(60)
+                google_articles = search_google_news_rss(query, max_results=5)
+                
+                internet_articles = rss_articles + google_articles
+                
+                # Убираем дубликаты
+                seen_titles = set()
+                unique_internet_articles = []
+                for article in internet_articles:
+                    if article['title'] not in seen_titles:
+                        seen_titles.add(article['title'])
+                        unique_internet_articles.append(article)
+                
+                all_articles.extend(unique_internet_articles)
+                
+                progress_bar.progress(80)
+            
+            # ========== ПОИСК В БАЗЕ ДАННЫХ ==========
+            if search_mode in ["💾 Только из базы", "🔍 Везде"]:
+                status_text.text("💾 Ищу в базе данных...")
+                
+                database_articles = []
+                db_news = load_database_news()
+                
+                query_lower = query.lower()
+                for article in db_news:
+                    if (query_lower in article['title'].lower() or 
+                        query_lower in article['summary'].lower()):
+                        database_articles.append(article)
+                
+                all_articles.extend(database_articles)
+                
+                progress_bar.progress(100)
+            
+            status_text.text("✅ Поиск завершен!")
+            time.sleep(0.5)
+            progress_bar.empty()
+            status_text.empty()
+        
+        # Очищаем индикатор и показываем результаты
+        search_placeholder.empty()
+        
+        # Показываем результаты
+        if all_articles:
+            # Группируем по источнику
+            internet_count = sum(1 for a in all_articles if a['type'] == 'internet')
+            database_count = sum(1 for a in all_articles if a['type'] == 'database')
+            
+            st.success(f"🎉 Найдено {len(all_articles)} новостей: 🌐 {internet_count} из интернета, 💾 {database_count} из базы")
+            st.markdown("---")
+            
+            # Показываем все статьи
+            for i, article in enumerate(all_articles):
+                display_article(article, i)
+                
+                # Кнопка "Сохранить в базу" для интернет-новостей
+                if article['type'] == 'internet':
+                    col_s1, col_s2, col_s3 = st.columns([1, 1, 8])
+                    with col_s1:
+                        if st.button("💾 Сохранить", key=f"save_{i}"):
+                            st.success(f"Новость '{article['title'][:50]}...' сохранена в базу!")
+                    with col_s2:
+                        if st.button("📌 Закладка", key=f"bookmark_{i}"):
+                            st.info("Добавлено в закладки")
+                    st.markdown("---")
         else:
-            with st.spinner("🌐 Ищу свежие новости в интернете..."):
-                # Ищем реальные новости
-                real_articles, found_real = search_real_news(search_query)
-                
-                if found_real and real_articles:
-                    # Показываем реальные новости
-                    st.success(f"🟢 Найдено свежих новостей: {len(real_articles)}")
-                    
-                    for article in real_articles:
-                        badge = '<span class="badge-live">ЖИВАЯ НОВОСТЬ</span>' if article['type'] == 'live' else '<span class="badge-static">ИЗ БАЗЫ</span>'
-                        card_class = "live-news" if article['type'] == 'live' else "static-news"
-                        
-                        st.markdown(f"""
-                        <div class="news-card {card_class}">
-                            <h4 style="color: #f0e68c; display: flex; align-items: center;">
-                                {article['title']} {badge}
-                            </h4>
-                            <p style="color: #ccc; font-size: 0.9em; margin: 5px 0;">
-                                📰 <strong>{article['source']}</strong> | 📅 {article['date']}
-                            </p>
-                            <p style="color: #e0e0e0; margin: 10px 0;">{article['snippet']}</p>
-                            <a href="{article['link']}" target="_blank" 
-                               style="color: #ff6b6b; text-decoration: none; font-weight: bold;">
-                            🔗 Читать полную статью
-                            </a>
-                        </div>
-                        """, unsafe_allow_html=True)
-                else:
-                    # Если нет реальных новостей, показываем статические
-                    st.info("🔴 Не удалось найти свежих новостей. Показываю релевантную информацию:")
-                    
-                    static_articles = get_static_articles(search_query)
-                    
-                    for article in static_articles:
-                        st.markdown(f"""
-                        <div class="news-card static-news">
-                            <h4 style="color: #f0e68c; display: flex; align-items: center;">
-                                {article['title']} <span class="badge-static">ИЗ БАЗЫ</span>
-                            </h4>
-                            <p style="color: #ccc; font-size: 0.9em; margin: 5px 0;">
-                                📰 <strong>{article['source']}</strong> | 📅 {article['date']}
-                            </p>
-                            <p style="color: #e0e0e0; margin: 10px 0;">{article['snippet']}</p>
-                            <a href="{article['link']}" target="_blank" 
-                               style="color: #ff6b6b; text-decoration: none; font-weight: bold;">
-                            🔗 Подробнее об этом
-                            </a>
-                        </div>
-                        """, unsafe_allow_html=True)
+            st.warning("😞 Ничего не найдено. Попробуйте:")
+            st.markdown("""
+            1. Изменить запрос
+            2. Использовать английские названия
+            3. Проверить режим поиска
+            """)
+    
+    # Если запрос еще не вводили
+    elif not search_button:
+        st.markdown("""
+        ## 🎯 Как пользоваться поиском:
+        
+        1. **Введите запрос** в поле выше (например: "Tim Burton", "Уоднесдэй", "Битлджус 2")
+        2. **Выберите режим поиска** в боковой панели:
+           - 🌐 **Только из интернета** - свежие новости с RSS-лент
+           - 💾 **Только из базы** - сохраненные статьи
+           - 🔍 **Везде** - поиск во всех источниках
+        3. **Нажмите "Начать поиск"** или используйте быстрый поиск
+        
+        ## 📌 Популярные запросы:
+        - Новые проекты Тима Бёртона
+        - Уоднесдэй 2 сезон
+        - Битлджус сиквел
+        - Фильмы с Джонни Деппом
+        - Анимационные работы
+        """)
+        
+        # Показываем последние сохраненные новости
+        st.markdown("---")
+        st.subheader("💾 Последние новости из базы:")
+        
+        db_news = load_database_news()
+        for i, article in enumerate(db_news[:3]):
+            display_article(article, i)
+            st.markdown("---")
 
-# --- ОДНА кнопка "Назад" внизу ---
-st.markdown("---")
-st.markdown(f"""
-<div style="text-align: center; padding: 30px 0;">
-    <a href="{MAIN_PAGE_URL}" target="_blank" class="back-btn">
-    ⬅️ Вернуться на главную страницу
-    </a>
-</div>
-""", unsafe_allow_html=True)
-
-# --- Футер ---
-st.markdown("""
-<div style='text-align: center; color: #888; padding: 20px; font-size: 0.9em;'>
-    <p>🦇 Система поиска актуальных новостей о Тим Бёртоне • Обновляется в реальном времени</p>
-    <p><small>Использует открытые источники новостей</small></p>
-</div>
-""", unsafe_allow_html=True)
+# ==================== ЗАПУСК ====================
+if __name__ == "__main__":
+    # Проверяем наличие feedparser
+    try:
+        import feedparser
+        main()
+    except ImportError:
+        st.error("""
+        ⚠️ **Ошибка: Модуль feedparser не установлен!**
+        
+        Установите его командой:
+        ```
+        pip install feedparser
+        ```
+        
+        Или добавьте в файл `requirements.txt`:
+        ```
+        feedparser>=6.0.10
+        ```
+        """)
